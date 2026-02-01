@@ -1,45 +1,40 @@
 from typing import List, Dict
 
-def fetch_manga_data(client, query, rate_limiter, avg_score: int = 70, popularity: int = 20000, per_page: int = 50) -> List[Dict]:
-    '''
-    Fetches manga metadata from all pages based on arguments
+def fetch_user_data(client, query, rate_limiter, per_page: int = 50) -> List[Dict]:
+    """
+    Fetches paginated user read data from AniList GraphQL API.
 
     Args:
         client: GraphQL API client
         query (str): GraphQL query string
-        avg_score (int): Minimum avg score of manga
-        popularity (int): Minimum popularity of manga
-        per_page (int): Results per page
+        per_page (int): Number of items per page
 
     Returns:
         List[Dict]: Aggregated mediaList entries across all pages
-    '''
+    """
 
     page = 1
-    all_media = []
+    all_manga = []
 
     # Go through all pages
     while True:
         rate_limiter.wait()
-
         # input variables 
         variables = {
             'page': page,
             'perPage': per_page,
             'type': 'MANGA',
-            'averageScoreGreater': avg_score,
-            'popularityGreater': popularity
         }
         result = client.query(query, variables)
         
         page_data = result["Page"]
-        all_media.extend(page_data["media"])
+        all_manga.extend(page_data["mediaList"])
 
         if not page_data["pageInfo"]["hasNextPage"]:
             break
 
         page += 1
     
-    return all_media
+    return all_manga
 
 

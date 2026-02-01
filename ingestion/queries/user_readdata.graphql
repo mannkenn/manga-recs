@@ -1,0 +1,22 @@
+query Query($mediaId: Int, $type: MediaType) {
+  Page(page: 1, perPage: 50) {
+    mediaList(mediaId: $mediaId, type: $type) {
+      mediaId
+      userId
+      user {
+        name
+      }
+      progress
+      progressVolumes
+      score
+      notes
+      priority
+      private
+      repeat
+      status
+    }
+    pageInfo {
+      hasNextPage
+    }
+  }
+}
