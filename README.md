@@ -1,1 +1,2 @@
-building end-to-end ml pipeline for a manga recommendation system using data from anilist api
+building end-to-end ml project for a manga recommendation system using data from anilist api
+
