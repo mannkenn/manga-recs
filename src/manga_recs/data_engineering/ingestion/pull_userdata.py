@@ -1,6 +1,6 @@
 from typing import List, Dict
 
-def fetch_user_data(client, query, rate_limiter, per_page: int = 50) -> List[Dict]:
+def fetch_user_data(client, query, rate_limiter, per_page: int = 50, max_pages = 1000) -> List[Dict]:
     """
     Fetches paginated user read data from AniList GraphQL API.
 
@@ -14,10 +14,10 @@ def fetch_user_data(client, query, rate_limiter, per_page: int = 50) -> List[Dic
     """
 
     page = 1
-    all_manga = []
+    all_media = []
 
     # Go through all pages
-    while True:
+    while page < max_pages:
         rate_limiter.wait()
         # input variables 
         variables = {
@@ -28,13 +28,15 @@ def fetch_user_data(client, query, rate_limiter, per_page: int = 50) -> List[Dic
         result = client.query(query, variables)
         
         page_data = result["Page"]
-        all_manga.extend(page_data["mediaList"])
+        all_media.extend(page_data["mediaList"])
 
         if not page_data["pageInfo"]["hasNextPage"]:
             break
-
+        
+        print(f"Fetched page {page}")
         page += 1
-    
-    return all_manga
+        
+    print(f"Finished Fetching {page}'s of user data.")
+    return all_media
 
 

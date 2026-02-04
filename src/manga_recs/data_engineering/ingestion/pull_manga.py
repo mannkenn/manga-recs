@@ -16,7 +16,7 @@ def fetch_manga_data(client, query, rate_limiter, avg_score: int = 70, popularit
     '''
 
     page = 1
-    all_media = []
+    all_manga = []
 
     # Go through all pages
     while True:
@@ -33,13 +33,15 @@ def fetch_manga_data(client, query, rate_limiter, avg_score: int = 70, popularit
         result = client.query(query, variables)
         
         page_data = result["Page"]
-        all_media.extend(page_data["media"])
+        all_manga.extend(page_data["media"])
 
         if not page_data["pageInfo"]["hasNextPage"]:
             break
-
+        print(f"Fetched page {page}")
         page += 1
-    
-    return all_media
+        
+    print(f"Finished Fetching {page}'s of manga data.")
+    return all_manga
+
 
 
