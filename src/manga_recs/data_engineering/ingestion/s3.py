@@ -6,7 +6,7 @@ from datetime import datetime
 # Load env vars
 load_dotenv()
 
-def s3_dump(filepath: str, filename: str, bucket: str = 'manga-recs'):
+def s3_dump(filepath: str, filename: str, bucket: str = 'manga-recs', status: str = 'raw'):
     '''
     Dumps json to s3 bucket
     '''
@@ -21,7 +21,7 @@ def s3_dump(filepath: str, filename: str, bucket: str = 'manga-recs'):
 
     # Versioning
     today_str = datetime.today().strftime("%Y-%m-%d")
-    S3_PREFIX = f"raw/{today_str}/"
+    S3_PREFIX = f"{status}/{today_str}/"
 
     try:
         s3.upload_file(filepath, bucket, f'{S3_PREFIX}{filename}')
