@@ -5,6 +5,7 @@ query Page($page: Int, $perPage: Int, $type: MediaType, $averageScoreGreater: In
         english
       }
       tags {
+        name
         category
         description
       }
