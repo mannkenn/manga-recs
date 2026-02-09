@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-
+from typing import Union
 
 def coerce_int_series(s: pd.Series) -> pd.Series:
     """
@@ -95,23 +95,44 @@ def extract_tag_categories(tags_obj):
 
 # main function, clean metadata using helpers above
 
-def clean_manga_metadata(df: pd.DataFrame) -> pd.DataFrame:
+
+def clean_manga_metadata(data: Union[pd.DataFrame, list]) -> pd.DataFrame:
     """
-    Apply your notebook cleaning steps to manga metadata.
-    Returns a new DataFrame (does not mutate input).
+    Clean manga metadata. Accepts either a DataFrame or a list of dict records.
+    Returns a new DataFrame.
     """
-    out = df.copy()
+    # If passed list-of-dicts, convert to DataFrame
+    if isinstance(data, list):
+        out = pd.DataFrame(data).copy()
+    else:
+        out = data.copy()
 
     # chapters/volumes -> nullable ints (safe with NaNs)
-    out["chapters"] = coerce_int_series(out.get("chapters"))
-    out["volumes"]  = coerce_int_series(out.get("volumes"))
+    if "chapters" in out.columns:
+        out["chapters"] = coerce_int_series(out["chapters"])
+    else:
+        out["chapters"] = pd.Series(pd.NA, index=out.index, dtype="Int64")
 
-    # go dict > relevant info for title and tags, i.e. extract title and category 
-    out["title"] = out["title"].apply(title_to_string)
-    out["tags"] = out["tags"].apply(extract_tag_categories)
+    if "volumes" in out.columns:
+        out["volumes"] = coerce_int_series(out["volumes"])
+    else:
+        out["volumes"] = pd.Series(pd.NA, index=out.index, dtype="Int64")
 
-    # log transforms for skew
-    out = log_transform(out, ["popularity", "favourites"])
+    # title and tags
+    if "title" in out.columns:
+        out["title"] = out["title"].apply(title_to_string)
+    else:
+        out["title"] = None
+
+    if "tags" in out.columns:
+        out["tags"] = out["tags"].apply(extract_tag_categories)
+    else:
+        out["tags"] = None
+
+    # log transforms for skew (only if columns exist)
+    cols_to_log = [c for c in ["popularity", "favourites"] if c in out.columns]
+    if cols_to_log:
+        out = log_transform(out, cols_to_log)
 
     # extract dates
     if "startDate" in out.columns:
@@ -126,8 +147,8 @@ def clean_manga_metadata(df: pd.DataFrame) -> pd.DataFrame:
         out["end_year"] = pd.Series(pd.NA, index=out.index, dtype="Int64")
         out["end_month"] = pd.Series(pd.NA, index=out.index, dtype="Int64")
 
-    # checkw heter manga is finished or not 
-    out["is_finished"] = out["end_year"].notna()
+    # finished flag
+    out["is_finished"] = out["end_year"].notna() if "end_year" in out.columns else False
 
     return out
 
