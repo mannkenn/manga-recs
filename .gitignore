@@ -1,6 +1,21 @@
-__pycache__
-.venv
-*.env
-*.json
+# ide settings
+.vscode/
+
+# venv
+venv/
+.venv/
+env/
+
+# byte-code
+__pycache__/    
+
+# env vars
+.env
+
+# dist
 *.egg-info/
-.vscode
+
+# data files
+data/
+
+

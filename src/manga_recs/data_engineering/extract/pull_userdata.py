@@ -36,7 +36,7 @@ def fetch_user_data(client, query, rate_limiter, per_page: int = 50, max_pages =
         print(f"Fetched page {page}")
         page += 1
         
-    print(f"Finished Fetching {page}'s of user data.")
+    print(f"Finished Fetching {page} pages of user data.")
     return all_media
 
 

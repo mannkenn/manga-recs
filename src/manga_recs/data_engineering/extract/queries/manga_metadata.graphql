@@ -3,6 +3,8 @@ query Page($page: Int, $perPage: Int, $type: MediaType, $averageScoreGreater: In
     media(type: $type, averageScore_greater: $averageScoreGreater, popularity_greater: $popularityGreater) {
       title {
         english
+        romaji
+        native
       }
       tags {
         name
