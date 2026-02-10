@@ -1,6 +1,6 @@
-import requests
-import time
-from typing import Dict
+import requests, time, json
+import pandas as pd
+from typing import Dict, Any
 
 class MangaGraphQLClient:
     '''
@@ -51,3 +51,24 @@ class RateLimiter:
         if elapsed < self.delay:
             time.sleep(self.delay - elapsed)
         self.last_call = time.time()
+
+def load_json(filepath: str) -> Any:
+    """Load JSON file."""
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+
+def save_json(data: Any, filepath: str) -> None:
+    """Save data to JSON file."""
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def load_parquet(filepath: str) -> pd.DataFrame:
+    """Load parquet file into DataFrame."""
+    return pd.read_parquet(str(filepath))
+
+
+def save_parquet(data: pd.DataFrame, filepath: str) -> None:
+    """Save DataFrame to parquet file."""
+    data.to_parquet(str(filepath))
