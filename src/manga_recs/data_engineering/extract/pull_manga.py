@@ -40,7 +40,7 @@ def fetch_manga_data(client, query, rate_limiter, avg_score: int = 70, popularit
         print(f"Fetched page {page}")
         page += 1
         
-    print(f"Finished Fetching {page}'s of manga data.")
+    print(f"Finished Fetching {page} pages of manga data.")
     return all_manga
 
 
