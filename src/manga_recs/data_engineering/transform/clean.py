@@ -53,6 +53,8 @@ def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
     df['tags'] = df['tags'].apply(extract_tag_names)
     df['has_end_date'] = df['endDate'].apply(has_end_date)
     df['startDate'] = df['startDate'].apply(parse_date_to_datetime)
+    df['chapters'] = df['chapters'].fillna(-1)
+    df['volumes'] = df['volumes'].fillna(-1)
     df = df.drop(columns=['endDate'])
     
     return df
@@ -61,6 +63,6 @@ def clean_user_readdata(data: List[Dict]) -> pd.DataFrame:
     """Clean user read data."""
     df = pd.DataFrame(data)
     df['name'] = df['user'].apply(lambda x: x.get('name') if isinstance(x, dict) else None)
-    df = df.drop(columns=['notes'])
+    df = df.drop(columns=['notes', 'user']) # only retain parsed name 
 
     return df
