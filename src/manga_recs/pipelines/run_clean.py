@@ -1,42 +1,56 @@
-from manga_recs.data_engineering.utils import load_json, save_parquet
-from manga_recs.data_engineering.load import s3_dump
-from manga_recs.data_engineering.transform.clean import clean_manga_metadata, clean_user_readdata
 from pathlib import Path
+from manga_recs.data_engineering.utils import load_json, save_parquet
+from manga_recs.data_engineering.load import s3_dump, s3_load
+from manga_recs.data_engineering.transform import clean_manga_metadata, clean_user_readdata
 
-input_dir = "data/raw"
-output_dir = "data/cleaned"
+def clean_data():
 
-# Create output directory
-Path(output_dir).mkdir(parents=True, exist_ok=True)
+    # Input and output
+    input_dir = Path("data/raw")
+    manga_path = input_dir / "manga_metadata.json"
+    user_path = input_dir / "user_readdata.json"
+    output_dir = Path("data/cleaned")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-# Load raw data
-print("Loading raw data...")
-manga_data = load_json(Path(input_dir) / "manga_metadata.json")
-user_data = load_json(Path(input_dir) / "user_readdata.json")
-print(f"Loaded {len(manga_data)} manga records and {len(user_data)} user records")
+    # Download raw data from S3
+    print("Downloading raw data from S3...")
+    manga_path = s3_load("manga_metadata.json", bucket="manga-recs", status="raw")
+    user_path = s3_load("user_readdata.json", bucket="manga-recs", status="raw")
+    print("Download complete!")
 
-# Clean data
-print("Cleaning manga metadata...")
-manga_df = clean_manga_metadata(manga_data)
-print(f"Cleaned manga: {len(manga_df)} records")
+    # Load raw data
+    print("Loading raw data...")
+    manga_data = load_json(manga_path)
+    user_data = load_json(user_path)
+    print(f"Loaded {len(manga_data)} manga records and {len(user_data)} user records")
 
-print("Cleaning user read data...")
-user_df = clean_user_readdata(user_data)
-print(f"Cleaned user data: {len(user_df)} records")
+    # Clean
+    print("Cleaning manga metadata...")
+    manga_df = clean_manga_metadata(manga_data)
+    print(f"Cleaned manga: {len(manga_df)} records")
 
-# Save cleaned data
-print("Saving cleaned data to parquet...")
-manga_output_path = Path(output_dir) / "cleaned_manga_metadata.parquet"
-user_output_path = Path(output_dir) / "cleaned_user_readdata.parquet"
+    print("Cleaning user read data...")
+    user_df = clean_user_readdata(user_data)
+    print(f"Cleaned user data: {len(user_df)} records")
 
-save_parquet(manga_df, manga_output_path)
-print(f"Saved manga metadata to {manga_output_path}")
+    # Save locally
+    manga_output_path = output_dir / "cleaned_manga_metadata.parquet"
+    user_output_path = output_dir / "cleaned_user_readdata.parquet"
 
-save_parquet(user_df, user_output_path)
-print(f"Saved user data to {user_output_path}")
+    save_parquet(manga_df, manga_output_path)
+    save_parquet(user_df, user_output_path)
 
-# Upload to S3
-print("Uploading to S3...")
-s3_dump(str(manga_output_path), "cleaned_manga_metadata.parquet", status='cleaned')
-s3_dump(str(user_output_path), "cleaned_user_readdata.parquet", status='cleaned')
-print("Upload complete!")
+    # Upload to S3
+    print("Uploading to S3...")
+    s3_dump(str(manga_output_path), manga_output_path.name, status="cleaned")
+    s3_dump(str(user_output_path), user_output_path.name, status="cleaned")
+    print("Upload complete!")
+
+    # Return paths for downstream usage
+    return {
+        "manga": manga_output_path,
+        "user": user_output_path
+    }
+
+if __name__ == "__main__":
+    clean_data()

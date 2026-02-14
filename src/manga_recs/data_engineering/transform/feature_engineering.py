@@ -2,6 +2,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MultiLabelBinarizer
 import numpy as np
 import pandas as pd 
+from pathlib import Path
 
 
 def parse_release_year(start_date):
@@ -18,7 +19,14 @@ def one_hot_encode_column(df, col):
 
 
 def create_manga_features(data):
-    df = pd.read_parquet(data)
+    # Accept either a path-like object or a DataFrame
+    if isinstance(data, (str, Path)):
+        df = pd.read_parquet(data)
+    elif isinstance(data, pd.DataFrame):
+        df = data.copy()
+    else:
+        # Fallback: try to read with pandas (will raise a helpful error if unsupported)
+        df = pd.read_parquet(data)
 
     # Drop these for now
     df = df.drop(columns=['title', 'volumes', 'description', 'favourites', 'meanScore'])
@@ -57,9 +65,16 @@ def one_hot_encode_simple(df, col):
     return df.join(encoded).drop(columns=[col])
 
 def create_user_features(data):
-    df = pd.read_parquet(data)
+    # Accept either a path-like object or a DataFrame
+    if isinstance(data, (str, Path)):
+        df = pd.read_parquet(data)
+    elif isinstance(data, pd.DataFrame):
+        df = data.copy()
+    else:
+        df = pd.read_parquet(data)
 
-    df.drop(columns =['priority', 'progressVolumes', 'private', 'repeat', 'name'])
+    # Drop unused columns (assign the result)
+    df = df.drop(columns=['priority', 'progressVolumes', 'private', 'repeat', 'name'], errors='ignore')
     df_encoded = one_hot_encode_simple(df, 'status')
+    return df_encoded
 
-    
