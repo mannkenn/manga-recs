@@ -17,7 +17,6 @@ def one_hot_encode_column(df, col):
     encoded_df = pd.DataFrame(encoded, columns=mlb.classes_, index=df.index)
     return df.join(encoded_df)
 
-
 def create_manga_features(data):
     # Accept either a path-like object or a DataFrame
     if isinstance(data, (str, Path)):
@@ -59,11 +58,6 @@ def create_manga_features(data):
 
     return df_encoded
 
-def one_hot_encode_simple(df, col):
-    """One-hot encode a single-value column using pandas.get_dummies"""
-    encoded = pd.get_dummies(df[col], prefix=col)
-    return df.join(encoded).drop(columns=[col])
-
 def create_user_features(data):
     # Accept either a path-like object or a DataFrame
     if isinstance(data, (str, Path)):
@@ -74,7 +68,22 @@ def create_user_features(data):
         df = pd.read_parquet(data)
 
     # Drop unused columns (assign the result)
-    df = df.drop(columns=['priority', 'progressVolumes', 'private', 'repeat', 'name'], errors='ignore')
-    df_encoded = one_hot_encode_simple(df, 'status')
-    return df_encoded
+    df = df.drop(columns=['priority', 'progress', 'progressVolumes', 'private', 'repeat', 'name'], errors='ignore')
+    
+    # Map status to numerical representation
+    status_map = {
+        "COMPLETED": 1.0,
+        "CURRENT": 0.8,
+        "PAUSED": 0.5,
+        "PLANNING": 0.4,
+        "DROPPED": 0.1
+    }
+    
+    df['status'] = df['status'].map(status_map)
+
+    df['interaction_strength'] = df['status'] * (df['score'] / 10)
+
+    return df
+
+
 
