@@ -55,7 +55,10 @@ def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
     df['startDate'] = df['startDate'].apply(parse_date_to_datetime)
     df['chapters'] = df['chapters'].fillna(-1)
     df['volumes'] = df['volumes'].fillna(-1)
-    df = df.drop(columns=['endDate'])
+    
+    # Remove adult content
+    df = df[df['isAdult'] != True]
+    df = df.drop(columns=['endDate', 'isAdult']) # drop endDate since we have has_end_date, and isAdult since we filtered it out
     
     return df
 

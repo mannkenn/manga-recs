@@ -44,9 +44,6 @@ def create_manga_features(data):
     df_encoded = one_hot_encode_column(df_encoded, 'genres')
     df_encoded = df_encoded.drop(columns=['genres'])
 
-    # Convert bool to numeric
-    df_encoded['isAdult'] = df_encoded['isAdult'].astype(int)
-
     # Log transform
     df_encoded['popularity'] = np.log1p(df_encoded['popularity'])
     df_encoded['chapters'] = np.log1p(df_encoded['chapters'].replace(-1, 0))  # Replace -1 with 0 before log
