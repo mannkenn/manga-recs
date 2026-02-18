@@ -17,7 +17,8 @@ def one_hot_encode_column(df, col):
     encoded_df = pd.DataFrame(encoded, columns=mlb.classes_, index=df.index)
     return df.join(encoded_df)
 
-def create_manga_features(data):
+
+def create_manga_features(data, save_dir = 'artifacts'):
     # Accept either a path-like object or a DataFrame
     if isinstance(data, (str, Path)):
         df = pd.read_parquet(data)
@@ -52,6 +53,8 @@ def create_manga_features(data):
     scaler = StandardScaler()
     num_cols = ['popularity', 'chapters', 'averageScore', 'release_year']
     df_encoded[num_cols] = scaler.fit_transform(df_encoded[num_cols])
+
+    joblib.dump(scaler, f'{save_dir}')
 
     return df_encoded
 
