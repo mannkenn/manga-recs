@@ -3,6 +3,7 @@ from manga_recs.data_engineering.load import s3_dump
 import pandas as pd
 from pathlib import Path
 from typing import Any, Dict, List
+import re
 
 def extract_english_title(title):
     if isinstance(title, dict):
@@ -44,8 +45,33 @@ def parse_date_to_datetime(date_dict):
             return pd.NaT
     return pd.NaT
 
-def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
+def clean_description(text: Any) -> Any:
+    """Sanitize manga description strings.
 
+    Removes common unwanted annotations that appear in the Anilist data such as
+    "(Source: VIZ Media)" or editorial notes starting with "Note:".  The goal is
+    to leave the core synopsis intact for downstream use.
+    """
+
+    if not isinstance(text, str):
+        return text
+
+    # drop any parenthetical/source attribution, e.g. (Source: VIZ Media)
+    text = re.sub(r"[\(\[]\s*Source:[^\)\]]+[\)\]]", "", text, flags=re.IGNORECASE)
+
+    # remove trailing notes that start with "Note:" through end of string
+    text = re.sub(r"Note:[^\.]*\.?$", "", text, flags=re.IGNORECASE)
+
+    # strip simple HTML tags like <br> and variants, and escape sequences like \n
+    text = re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE)
+    text = text.replace("\n", " ")
+
+    # collapse multiple spaces left by removals
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
+
+def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
     """Clean manga metadata."""
     df = pd.DataFrame(data)
     # Extract English title, tag names, and end date presence, and convert dates to datetime
@@ -55,6 +81,10 @@ def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
     df['startDate'] = df['startDate'].apply(parse_date_to_datetime)
     df['chapters'] = df['chapters'].fillna(-1)
     df['volumes'] = df['volumes'].fillna(-1)
+
+    # clean descriptions if present
+    if 'description' in df.columns:
+        df['description'] = df['description'].apply(clean_description)
     
     # Remove adult content
     df = df[df['isAdult'] != True]

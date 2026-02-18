@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from schemas import RecommendationResponse, RecommendationRequest
+from manga_recs.api.schemas import RecommendationResponse, RecommendationRequest
 import joblib
 import pandas as pd
 from pathlib import Path

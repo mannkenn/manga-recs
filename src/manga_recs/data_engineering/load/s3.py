@@ -61,28 +61,36 @@ def get_latest_s3_file(bucket: str = 'manga-recs', status: str = 'raw'):
     
     return latest
 
-def s3_load(filename: str, bucket: str = 'manga-recs', status: str = 'raw'):
-    
-    # Connet to s3 
+def s3_load(filename: str, bucket: str = 'manga-recs', status: str = 'raw', use_cache: bool = True):
+    """
+    Download file from S3 if not already cached locally.
+    Returns local path to file.
+    """
+
+    # Local folder
+    download_dir = Path("data") / status
+    download_dir.mkdir(parents=True, exist_ok=True)
+    local_path = download_dir / filename
+
+    # Check if file exists and use_cache is True
+    if use_cache and local_path.exists():
+        print(f"Using cached file at {local_path}")
+        return str(local_path)
+
+    # Connect to S3
     s3 = boto3.client(
-    "s3",
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name=os.getenv("AWS_DEFAULT_REGION")
+        "s3",
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        region_name=os.getenv("AWS_DEFAULT_REGION")
     )
 
     latest_version = get_latest_s3_file(bucket, status)
-
-    # Create local folder data/<status> if it doesn't exist
-    download_dir = Path("data") / status
-    download_dir.mkdir(parents=True, exist_ok=True)
-
-    local_path = download_dir / filename
 
     try:
         s3.download_file(bucket, f'{status}/{latest_version}/{filename}', str(local_path))
         print(f"Downloaded {filename} from s3://{bucket}/{status}/{latest_version}/{filename}")
     except Exception as e:
         print(f"Error downloading {filename}: {e}")
-    # Return the local path to the downloaded file so callers can load it
+
     return str(local_path)
