@@ -1,6 +1,6 @@
 import pandas as pd
 import joblib
-from pathlib import Path
+import argparse
 from manga_recs.data_engineering.load.s3 import s3_load
 
 # Paths
@@ -11,25 +11,46 @@ METADATA_PATH = s3_load("cleaned_manga_metadata.parquet", bucket="manga-recs", s
 SIM_MATRIX = joblib.load(MODEL_PATH)
 METADATA = pd.read_parquet(METADATA_PATH)
 
-def get_top_n_recommendations(manga_id, top_n=5):
+def get_top_n_recommendations_by_title(title, top_n=5):
+    """Return top-N manga recommendations given a manga title."""
+    
+    # Find manga ID from title
+    matched = METADATA[METADATA['title'].str.lower() == title.lower()]
+    if matched.empty:
+        raise ValueError(f"Title '{title}' not found in metadata.")
+    
+    manga_id = matched['id'].iloc[0]
+    
+    if manga_id not in SIM_MATRIX.index:
+        raise ValueError(f"Manga ID {manga_id} (from title '{title}') not found in similarity matrix.")
 
-    # Get row index for the given manga_id
-    similarities = SIM_MATRIX.loc[manga_id]  # Ensure manga_id is valid
+    # Get similarity scores for this manga
+    similarities = SIM_MATRIX.loc[manga_id]
 
-    # Get top N most similar
-    top_similarities = similarities.sort_values(ascending=False).head(top_n)
+    # Exclude itself and get top-N
+    top_similarities = similarities.drop(manga_id, errors='ignore').sort_values(ascending=False).head(top_n)
 
-    # Get the corresponding metadata for these manga IDs
+    # Get metadata for recommended manga
     recs = METADATA[METADATA['id'].isin(top_similarities.index)][['id', 'title', 'description', 'tags']]
 
-    # Merge similarity scores into metadata
-    recs = recs.set_index('id')  # set 'id' as index to match top_similarities
-    recs = recs.join(top_similarities.rename("similarity"))  # add similarity column
-    recs['similarity'] = recs['similarity'].round(2)  # round similarity for better readability
+    # Merge similarity scores
+    recs = recs.set_index('id').join(top_similarities.rename("similarity"))
+    recs['similarity'] = recs['similarity'].round(2)
 
+    recs = recs.sort_values(by="similarity", ascending=False)
     return recs.reset_index().to_dict(orient='records')
 
-# test
+
+def main():
+    parser = argparse.ArgumentParser(description="Get top-N manga recommendations by title")
+    parser.add_argument("--title", type=str, required=True, help="Manga title to generate recommendations for")
+    parser.add_argument("--top_n", type=int, default=5, help="Number of recommendations to return")
+    args = parser.parse_args()
+
+    recommendations = get_top_n_recommendations_by_title(title=args.title, top_n=args.top_n)
+    for rec in recommendations:
+        print(rec)
+
+
 if __name__ == "__main__":
-    recommendations = get_top_n_recommendations(manga_id=30002, top_n=5)
-    print(recommendations)
+    main()

@@ -22,3 +22,6 @@ data/
 mlflow.db
 mlruns/
 artifacts/
+
+# experimentation
+notebooks/
