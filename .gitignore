@@ -20,4 +20,5 @@ data/
 
 # mlops
 mlflow.db
-
+mlruns/
+artifacts/

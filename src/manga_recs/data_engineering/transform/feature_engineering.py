@@ -2,6 +2,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MultiLabelBinarizer
 import numpy as np
 import pandas as pd 
+import joblib
 from pathlib import Path
 
 
@@ -18,7 +19,11 @@ def one_hot_encode_column(df, col):
     return df.join(encoded_df)
 
 
-def create_manga_features(data, save_dir = 'artifacts'):
+def create_manga_features(data, save_dir = 'artifacts/features'):
+
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
     # Accept either a path-like object or a DataFrame
     if isinstance(data, (str, Path)):
         df = pd.read_parquet(data)
@@ -54,7 +59,9 @@ def create_manga_features(data, save_dir = 'artifacts'):
     num_cols = ['popularity', 'chapters', 'averageScore', 'release_year']
     df_encoded[num_cols] = scaler.fit_transform(df_encoded[num_cols])
 
-    joblib.dump(scaler, f'{save_dir}')
+    # Save artifacts
+    joblib.dump(scaler, save_dir / "scaler.pkl")
+    joblib.dump(df_encoded.columns.tolist(), save_dir / "feature_columns.pkl")
 
     return df_encoded
 
