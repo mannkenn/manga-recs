@@ -3,16 +3,16 @@ from schemas import RecommendationResponse, RecommendationRequest
 import joblib
 import pandas as pd
 from pathlib import Path
+from rapidfuzz import fuzz, process
+from manga_recs.data_engineering.load import s3_load
 
 app = FastAPI(title="Manga Recommendation API")
 
 # Load similarity matrix and metadata at startup
-BASE_DIR = Path(__file__).resolve().parents[3]
-
-SIM_PATH = BASE_DIR / "artifacts" / "models" / "cosine_sim.pkl"
+SIM_PATH = s3_load("cosine_sim.pkl", bucket="manga-recs", status="models")
 SIM_MATRIX = joblib.load(SIM_PATH)
 
-METADATA_PATH = BASE_DIR / "data" / "cleaned" / "cleaned_manga_metadata.parquet"
+METADATA_PATH = s3_load("cleaned_manga_metadata.parquet", bucket="manga-recs", status="cleaned")
 METADATA = pd.read_parquet(METADATA_PATH)
 
 @app.post("/recommendations/", response_model=RecommendationResponse)
@@ -20,8 +20,14 @@ def recommend(request: RecommendationRequest):
     title = request.title
     top_n = request.top_n
 
-    # Find manga ID from title
-    matched = METADATA[METADATA['title'].str.lower() == title.lower()]
+    # Find manga ID from title using fuzzy matchingq
+    titles = METADATA['title'].tolist()
+    best_match = process.extractOne(title, titles, scorer=fuzz.ratio)
+    if best_match is None or best_match[1] < 70:  # Adjust threshold as needed
+        raise HTTPException(status_code=404, detail=f"Title '{title}' not found in metadata.")
+    matched_title = best_match[0]
+
+    matched = METADATA[METADATA['title'].str.lower() == matched_title.lower()]
     if matched.empty:
         raise HTTPException(status_code=404, detail=f"Title '{title}' not found in metadata.")
     
