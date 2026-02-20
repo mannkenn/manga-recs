@@ -1,5 +1,4 @@
 from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MultiLabelBinarizer
 import numpy as np
 import pandas as pd 
 import joblib
@@ -12,10 +11,47 @@ def parse_release_year(start_date):
         return start_date.year
     return np.nan
 
-def one_hot_encode_column(df, col):
-    mlb = MultiLabelBinarizer()
-    encoded = mlb.fit_transform(df[col])
-    encoded_df = pd.DataFrame(encoded, columns=mlb.classes_, index=df.index)
+def one_hot_encode_column(df, col, weight_top=None):
+    """One-hot encode a column of list-like values.
+
+    If `weight_top` is provided (e.g. [3, 2]) the function will weight the
+    first element of each row's list by 3, the second by 2, and all remaining
+    elements by 1. This preserves the original ordering of tags within each
+    row.
+    """
+    # Collect all unique classes
+    all_values = set()
+    for vals in df[col]:
+        if vals is None:
+            continue
+        for v in vals:
+            all_values.add(v)
+
+    classes = sorted(all_values)
+
+    # Initialize encoded DataFrame with zeros
+    encoded_df = pd.DataFrame(0, index=df.index, columns=classes, dtype=float)
+
+    if weight_top is None:
+        # simple binary encoding
+        for idx, vals in df[col].items():
+            if vals is None:
+                continue
+            for v in vals:
+                encoded_df.at[idx, v] = 1.0
+    else:
+        # weighted encoding based on position in the list
+        for idx, vals in df[col].items():
+            if vals is None:
+                continue
+            for pos, v in enumerate(vals):
+                if pos < len(weight_top):
+                    weight = float(weight_top[pos])
+                else:
+                    weight = 1.0
+                # If the same tag appears multiple times, keep the max weight
+                encoded_df.at[idx, v] = max(encoded_df.at[idx, v], weight)
+
     return df.join(encoded_df)
 
 
@@ -42,8 +78,8 @@ def create_manga_features(data, save_dir = 'artifacts/features'):
 
     df = df.dropna()
 
-    # One hot encode tags
-    df_encoded = one_hot_encode_column(df, 'tags')
+    # One hot encode tags (weight first tag 3, second tag 2, others 1)
+    df_encoded = one_hot_encode_column(df, 'tags', weight_top=[3, 2])
     df_encoded = df_encoded.drop(columns=['tags'])
 
     # One hot encode genres
