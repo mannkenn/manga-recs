@@ -21,11 +21,25 @@ def ingest_data():
     user_query = (files("manga_recs.data_engineering.extract.queries") / "user_readdata.graphql").read_text(encoding="utf-8")
 
     # Rate limiter
-    rate_limiter = RateLimiter(30)
+    rate_limiter = RateLimiter(10)
+
+    # User read data pull settings
+    user_start_id = 1
+    user_end_id = 1000
+    user_max_pages = 200
+    user_per_page = 50
 
     # Fetch data
     manga_data = fetch_manga_data(client, manga_query, rate_limiter, popularity=10000)
-    user_data = fetch_user_data(client, user_query, rate_limiter, max_pages=200)
+    user_data = fetch_user_data(
+        client,
+        user_query,
+        rate_limiter,
+        per_page=user_per_page,
+        max_pages=user_max_pages,
+        start_user_id=user_start_id,
+        end_user_id=user_end_id,
+    )
 
     # Save locally
     manga_path = Path("data/raw/manga_metadata.json")

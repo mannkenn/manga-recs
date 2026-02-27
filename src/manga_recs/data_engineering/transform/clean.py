@@ -95,7 +95,29 @@ def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
 def clean_user_readdata(data: List[Dict]) -> pd.DataFrame:
     """Clean user read data."""
     df = pd.DataFrame(data)
-    df['name'] = df['user'].apply(lambda x: x.get('name') if isinstance(x, dict) else None)
-    df = df.drop(columns=['notes', 'user']) # only retain parsed name 
+
+    expected_columns = ["userId", "status", "score", "progress", "mediaId", "createdAt"]
+    for col in expected_columns:
+        if col not in df.columns:
+            df[col] = None
+
+    df = df[expected_columns].copy()
+
+    df["userId"] = pd.to_numeric(df["userId"], errors="coerce")
+    df["mediaId"] = pd.to_numeric(df["mediaId"], errors="coerce")
+    df["score"] = pd.to_numeric(df["score"], errors="coerce")
+    df["progress"] = pd.to_numeric(df["progress"], errors="coerce")
+
+    if "status" in df.columns:
+        df["status"] = df["status"].astype("string").str.upper()
+
+    df["createdAt"] = pd.to_datetime(df["createdAt"], unit="s", errors="coerce")
+
+    # Drop records that cannot be joined downstream.
+    df = df.dropna(subset=["userId", "mediaId"])
+
+    # Preserve integer IDs after null filtering.
+    df["userId"] = df["userId"].astype("int64")
+    df["mediaId"] = df["mediaId"].astype("int64")
 
     return df

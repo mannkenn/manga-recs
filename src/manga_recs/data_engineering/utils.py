@@ -8,11 +8,31 @@ class MangaGraphQLClient:
     '''
     
     def __init__(self, url: str, timeout: int = 10):
-        self.url = url
+        self.url = url.rstrip("/")
         self.session = requests.Session()
         self.timeout = timeout
+
+    def _retry_delay(self, response: requests.Response, attempt: int) -> float:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after is not None:
+            try:
+                return max(float(retry_after), 0.0)
+            except ValueError:
+                pass
+
+        rate_limit_reset = response.headers.get("X-RateLimit-Reset")
+        if rate_limit_reset is not None:
+            try:
+                reset_at = float(rate_limit_reset)
+                wait_seconds = reset_at - time.time()
+                if wait_seconds > 0:
+                    return wait_seconds
+            except ValueError:
+                pass
+
+        return float(min(2 ** attempt, 60))
         
-    def query(self, query: str, variables: dict | None = None) -> Dict:
+    def query(self, query: str, variables: dict | None = None, max_retries: int = 8) -> Dict:
         '''
         Construct GraphQL query with variables
 
@@ -28,18 +48,53 @@ class MangaGraphQLClient:
         if variables:
             payload["variables"] = variables
 
-        response = self.session.post(
-            self.url,
-            json=payload,
-            timeout=self.timeout
-        )
-        response.raise_for_status()     
-        result = response.json()
+        retryable_statuses = {429, 500, 502, 503, 504}
+        last_exception = None
 
-        if "errors" in result:
-            raise Exception(result["errors"])
+        for attempt in range(1, max_retries + 1):
+            response = self.session.post(
+                self.url,
+                json=payload,
+                timeout=self.timeout
+            )
 
-        return result["data"]
+            if response.status_code in retryable_statuses and attempt < max_retries:
+                time.sleep(self._retry_delay(response, attempt))
+                continue
+
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                response_text = response.text[:500]
+                raise requests.HTTPError(
+                    f"GraphQL request failed with {response.status_code} at {self.url}. "
+                    f"Response: {response_text}",
+                    response=response,
+                ) from exc
+
+            try:
+                result = response.json()
+            except ValueError as exc:
+                raise ValueError(
+                    f"Non-JSON response from GraphQL endpoint {self.url}: {response.text[:500]}"
+                ) from exc
+
+            if "errors" in result:
+                last_exception = Exception(result["errors"])
+                error_blob = json.dumps(result["errors"]).lower()
+                if attempt < max_retries:
+                    if "too many requests" in error_blob or '"status": 429' in error_blob:
+                        time.sleep(self._retry_delay(response, attempt))
+                    else:
+                        time.sleep(min(2 ** attempt, 8))
+                    continue
+                raise last_exception
+
+            return result["data"]
+
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("GraphQL query failed without a response.")
     
 class RateLimiter:
     def __init__(self, requests_per_minute: int):
