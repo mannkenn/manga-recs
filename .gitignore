@@ -1,27 +1,153 @@
-# ide settings
-.vscode/
+# ========================================
+# Python
+# ========================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 
-# venv
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+
+# ========================================
+# Virtual Environments
+# ========================================
 venv/
 .venv/
 env/
+ENV/
+env.bak/
+venv.bak/
 
-# byte-code
-__pycache__/    
+# ========================================
+# IDE & Editor Settings
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
 
-# env vars
+# ========================================
+# Environment Variables & Secrets
+# ========================================
 .env
+.env.local
+.env.*.local
+*.key
+*.pem
 
-# dist
-*.egg-info/
+# ========================================
+# Data & Artifacts
+# ========================================
+# Keep directory structure but ignore contents
+data/raw/*.json
+data/raw/*.csv
+data/cleaned/*.parquet
+data/features/*.parquet
+data/features/*.pkl
+data/models/*.pkl
+data/models/*.joblib
 
-# data files
-data/
+# Keep empty directories
+!data/raw/.gitkeep
+!data/cleaned/.gitkeep
+!data/features/.gitkeep
+!data/models/.gitkeep
 
-# mlops
+# ========================================
+# ML/MLOps
+# ========================================
 mlflow.db
 mlruns/
-artifacts/
+artifacts/*.pkl
+artifacts/*.joblib
+artifacts/models/
+artifacts/features/
 
-# experimentation
-notebooks/
+# Keep artifact directories
+!artifacts/models/.gitkeep
+!artifacts/features/.gitkeep
+
+# ========================================
+# Jupyter Notebooks
+# ========================================
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Keep notebooks but ignore output
+# (Uncomment if using nbstripout)
+# *.ipynb
+
+# ========================================
+# Node.js / Frontend
+# ========================================
+node_modules/
+.next/
+out/
+.nuxt/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ========================================
+# Build & Temporary Files
+# ========================================
+*.tmp
+*.temp
+.sass-cache/
+*.pid
+*.seed
+*.pid.lock
+
+# ========================================
+# OS Files
+# ========================================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ========================================
+# Docker
+# ========================================
+docker-compose.override.yml
+.dockerignore

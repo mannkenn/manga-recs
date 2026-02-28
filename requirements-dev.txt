@@ -1,0 +1,9 @@
+# Development dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Core package with all dependencies
+-e .[dev]
+
+# Additional development tools
+httpx>=0.24.0  # For API testing
+faker>=19.0.0  # For generating test data
