@@ -1,22 +1,15 @@
-query Query($mediaId: Int, $type: MediaType) {
-  Page(page: 1, perPage: 50) {
-    mediaList(mediaId: $mediaId, type: $type) {
-      mediaId
+query Query($userId: Int, $type: MediaType, $page: Int, $perPage: Int) {
+  Page(page: $page, perPage: $perPage) {
+    mediaList(userId: $userId, type: $type) {
       userId
-      user {
-        name
-      }
-      progress
-      progressVolumes
-      score
-      notes
-      priority
-      private
-      repeat
       status
+      score
+      progress
+      mediaId
+      createdAt
     }
     pageInfo {
       hasNextPage
     }
   }
-}
+} 

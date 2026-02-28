@@ -74,9 +74,7 @@ def create_user_features(data):
     else:
         df = pd.read_parquet(data)
 
-    # Drop unused columns (assign the result)
-    df = df.drop(columns=['priority', 'progress', 'progressVolumes', 'private', 'repeat', 'name'], errors='ignore')
-    
+    df = df.drop(columns=['createdAt', 'progress'])  # Drop createdAt since it's not useful for modeling, and progress since it has many nulls
     # Map status to numerical representation
     status_map = {
         "COMPLETED": 1.0,
