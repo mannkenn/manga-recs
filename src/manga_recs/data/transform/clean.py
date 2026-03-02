@@ -1,5 +1,5 @@
-from manga_recs.data_engineering.utils import load_json, save_json
-from manga_recs.data_engineering.load import s3_dump
+from manga_recs.data.utils import load_json, save_json
+from manga_recs.data.load import s3_dump
 import pandas as pd
 from pathlib import Path
 from typing import Any, Dict, List

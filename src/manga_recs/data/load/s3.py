@@ -4,13 +4,18 @@ from dotenv import load_dotenv
 from datetime import datetime
 from pathlib import Path
 
+from manga_recs.common.settings import settings
+
 # Load env vars
 load_dotenv()
 
-def s3_dump(filepath: str, filename: str, bucket: str = 'manga-recs', status: str = 'raw'):
+def s3_dump(filepath: str, filename: str, bucket: str | None = None, status: str = 'raw'):
     '''
     Dumps json to s3 bucket
     '''
+
+    if bucket is None:
+        bucket = settings.s3.bucket
 
     # Connet to s3 
     s3 = boto3.client(
@@ -31,10 +36,13 @@ def s3_dump(filepath: str, filename: str, bucket: str = 'manga-recs', status: st
         print(f"Error uploading {filename}: {e}")
 
 
-def get_latest_s3_file(bucket: str = 'manga-recs', status: str = 'raw'):
+def get_latest_s3_file(bucket: str | None = None, status: str = 'raw'):
     '''
     Gets latest file from s3 bucket
     '''
+    if bucket is None:
+        bucket = settings.s3.bucket
+
     # Connet to s3 
     s3 = boto3.client(
     "s3",
@@ -61,14 +69,17 @@ def get_latest_s3_file(bucket: str = 'manga-recs', status: str = 'raw'):
     
     return latest
 
-def s3_load(filename: str, bucket: str = 'manga-recs', status: str = 'raw', use_cache: bool = True):
+def s3_load(filename: str, bucket: str | None = None, status: str = 'raw', use_cache: bool = True):
     """
     Download file from S3 if not already cached locally.
     Returns local path to file.
     """
 
+    if bucket is None:
+        bucket = settings.s3.bucket
+
     # Local folder
-    download_dir = Path("data") / status
+    download_dir = Path(settings.paths.data_dir) / status
     download_dir.mkdir(parents=True, exist_ok=True)
     local_path = download_dir / filename
 

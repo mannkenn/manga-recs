@@ -2,17 +2,23 @@ from fastapi import FastAPI, HTTPException
 from manga_recs.api.schemas import RecommendationResponse, RecommendationRequest
 import joblib
 import pandas as pd
-from pathlib import Path
 from rapidfuzz import fuzz, process
-from manga_recs.data_engineering.load import s3_load
+from manga_recs.common.constants import (
+    CLEANED_MANGA_METADATA_PARQUET,
+    CLEANED_STATUS,
+    COSINE_SIM_FILENAME,
+    MODELS_STATUS,
+)
+from manga_recs.common.settings import settings
+from manga_recs.data.load import s3_load
 
 app = FastAPI(title="Manga Recommendation API")
 
 # Load similarity matrix and metadata at startup
-SIM_PATH = s3_load("cosine_sim.pkl", bucket="manga-recs", status="models")
+SIM_PATH = s3_load(COSINE_SIM_FILENAME, bucket=settings.s3.bucket, status=MODELS_STATUS)
 SIM_MATRIX = joblib.load(SIM_PATH)
 
-METADATA_PATH = s3_load("cleaned_manga_metadata.parquet", bucket="manga-recs", status="cleaned")
+METADATA_PATH = s3_load(CLEANED_MANGA_METADATA_PARQUET, bucket=settings.s3.bucket, status=CLEANED_STATUS)
 METADATA = pd.read_parquet(METADATA_PATH)
 
 @app.post("/recommendations/", response_model=RecommendationResponse)
@@ -23,7 +29,7 @@ def recommend(request: RecommendationRequest):
     # Find manga ID from title using fuzzy matchingq
     titles = METADATA['title'].tolist()
     best_match = process.extractOne(title, titles, scorer=fuzz.ratio)
-    if best_match is None or best_match[1] < 70:  # Adjust threshold as needed
+    if best_match is None or best_match[1] < settings.api.fuzzy_match_threshold:
         raise HTTPException(status_code=404, detail=f"Title '{title}' not found in metadata.")
     matched_title = best_match[0]
 

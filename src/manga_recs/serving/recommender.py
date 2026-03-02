@@ -1,11 +1,18 @@
 import pandas as pd
 import joblib
 import argparse
-from manga_recs.data_engineering.load.s3 import s3_load
+from manga_recs.common.constants import (
+    CLEANED_MANGA_METADATA_PARQUET,
+    CLEANED_STATUS,
+    COSINE_SIM_FILENAME,
+    MODELS_STATUS,
+)
+from manga_recs.common.settings import settings
+from manga_recs.data.load.s3 import s3_load
 
 # Paths
-MODEL_PATH = s3_load("cosine_sim.pkl", bucket="manga-recs", status="models")
-METADATA_PATH = s3_load("cleaned_manga_metadata.parquet", bucket="manga-recs", status="cleaned")
+MODEL_PATH = s3_load(COSINE_SIM_FILENAME, bucket=settings.s3.bucket, status=MODELS_STATUS)
+METADATA_PATH = s3_load(CLEANED_MANGA_METADATA_PARQUET, bucket=settings.s3.bucket, status=CLEANED_STATUS)
 
 # Load similarity matrix + metadata
 SIM_MATRIX = joblib.load(MODEL_PATH)
@@ -44,7 +51,7 @@ def get_top_n_recommendations_by_title(title, top_n=5):
 def main():
     parser = argparse.ArgumentParser(description="Get top-N manga recommendations by title")
     parser.add_argument("--title", type=str, required=True, help="Manga title to generate recommendations for")
-    parser.add_argument("--top_n", type=int, default=5, help="Number of recommendations to return")
+    parser.add_argument("--top_n", type=int, default=settings.recommendation.default_top_n, help="Number of recommendations to return")
     args = parser.parse_args()
 
     recommendations = get_top_n_recommendations_by_title(title=args.title, top_n=args.top_n)
