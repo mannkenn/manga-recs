@@ -25,3 +25,9 @@ artifacts/
 
 # experimentation
 notebooks/
+
+# generated data artifacts
+data/raw/
+data/cleaned/
+data/features/
+data/models/
