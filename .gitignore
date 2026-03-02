@@ -12,11 +12,11 @@ __pycache__/
 # env vars
 .env
 
+# local runtime config
+configs/local.toml
+
 # dist
 *.egg-info/
-
-# data files
-data/
 
 # mlops
 mlflow.db

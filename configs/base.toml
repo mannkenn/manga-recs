@@ -1,0 +1,24 @@
+[paths]
+data_dir = "data"
+artifacts_dir = "artifacts"
+
+[s3]
+bucket = "manga-recs"
+
+[api]
+graphql_url = "https://graphql.anilist.co"
+fuzzy_match_threshold = 70
+
+[ingestion]
+rate_limit = 10
+popularity_min = 10000
+user_start_id = 1001
+user_end_id = 1500
+user_max_pages = 200
+user_per_page = 50
+
+[mlflow]
+experiment_name = "manga_cosine_recommender"
+
+[recommendation]
+default_top_n = 5
