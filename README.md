@@ -1,4 +1,4 @@
-# 📚 Manga Recommendation System
+# Manga Recommendation System
 
 [![CI/CD](https://github.com/mannkenn/manga-recs/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/mannkenn/manga-recs/actions)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
@@ -7,17 +7,17 @@
 
 An end-to-end machine learning project for manga recommendations using data from the [AniList API](https://anilist.gitbook.io/anilist-apiv2-docs/). This system includes data ingestion, preprocessing, feature engineering, ML model training, and a FastAPI backend with Next.js frontend.
 
-## ✨ Features
+## Features
 
-- 🔄 **Automated Data Pipeline**: Fetch and process manga metadata and user reading data from AniList
-- 🤖 **ML-Powered Recommendations**: Content-based filtering using cosine similarity
-- 🚀 **FastAPI Backend**: High-performance REST API for recommendations
-- 💻 **Next.js Frontend**: Modern React-based UI for searching and discovering manga
-- 📊 **MLflow Integration**: Experiment tracking and model versioning
-- ☁️ **S3 Storage**: Cloud data persistence with AWS S3
-- 🧪 **Comprehensive Testing**: Unit, integration, and E2E tests with CI/CD
+- **Automated Data Pipeline**: Fetch and process manga metadata and user reading data from AniList
+- **ML-Powered Recommendations**: Content-based filtering using cosine similarity
+- **FastAPI Backend**: High-performance REST API for recommendations
+- **Next.js Frontend**: Modern React-based UI for searching and discovering manga
+- **MLflow Integration**: Experiment tracking and model versioning
+- **S3 Storage**: Cloud data persistence with AWS S3
+- **Comprehensive Testing**: Unit, integration, and E2E tests with CI/CD
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────┐      ┌──────────────┐      ┌─────────────┐
@@ -44,7 +44,7 @@ An end-to-end machine learning project for manga recommendations using data from
                      └──────────────┘      └─────────────┘
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -118,7 +118,7 @@ make build-features  # Generate ML features
 make train           # Train recommendation model
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 manga-recs/
@@ -146,7 +146,7 @@ manga-recs/
 └── .github/workflows/      # CI/CD pipelines
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -162,7 +162,7 @@ make lint
 make format-check
 ```
 
-## 📊 ML Pipeline
+## ML Pipeline
 
 ### 1. Data Ingestion
 - Fetches manga metadata (title, genres, scores, popularity)
@@ -184,7 +184,7 @@ make format-check
 - Fuzzy matching for manga title search
 - Returns top-N similar manga
 
-## 🛠️ Development
+## Development
 
 ### Code Style
 
@@ -211,7 +211,7 @@ make pre-commit       # Install hooks
 pre-commit run --all-files  # Run manually
 ```
 
-## 📖 API Documentation
+## API Documentation
 
 Once the backend is running, visit:
 - Swagger UI: `http://localhost:8000/docs`
@@ -225,7 +225,7 @@ curl -X POST http://localhost:8000/api/recommendations \
   -d '{"manga_title": "One Piece", "top_n": 5}'
 ```
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -235,16 +235,16 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [AniList](https://anilist.co/) for providing the GraphQL API
 - Built with FastAPI, Next.js, scikit-learn, and MLflow
 
-## 📧 Contact
+## Contact
 
 Manny Kim - [@mannkenn](https://github.com/mannkenn) - emmanuelkim2004@gmail.com
 

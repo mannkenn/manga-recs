@@ -2,7 +2,7 @@
 
 Welcome to the Manga Recommendation System documentation!
 
-## 📚 Documentation Structure
+## Documentation Structure
 
 ### Getting Started
 - **[Setup Guide](guides/SETUP.md)** - Complete installation and configuration instructions
@@ -32,7 +32,7 @@ Welcome to the Manga Recommendation System documentation!
 - Writing tests
 - Coverage requirements
 
-## 🎯 Quick Links
+## Quick Links
 
 | Topic | Link |
 |-------|------|
@@ -42,7 +42,7 @@ Welcome to the Manga Recommendation System documentation!
 | Contributing | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | Changelog | [CHANGELOG.md](../CHANGELOG.md) |
 
-## 📖 Guides
+## Guides
 
 ### For Users
 1. [Getting Started](guides/SETUP.md#installation-steps)
@@ -62,7 +62,7 @@ Welcome to the Manga Recommendation System documentation!
 3. [Model Training](architecture/ARCHITECTURE.md#2-training-flow)
 4. [MLflow Tracking](architecture/ARCHITECTURE.md#monitoring--observability)
 
-## 🔧 Development
+## Development
 
 ### Common Commands
 
@@ -97,13 +97,13 @@ manga-recs/
 └── data/              # Data storage
 ```
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! Please see:
 - [Contributing Guidelines](../CONTRIBUTING.md)
 - [Good First Issues](https://github.com/mannkenn/manga-recs/labels/good%20first%20issue)
 
-## 📝 Additional Resources
+## Additional Resources
 
 ### External Documentation
 - [AniList API](https://anilist.gitbook.io/anilist-apiv2-docs/)
@@ -116,12 +116,12 @@ We welcome contributions! Please see:
 - [AniList](https://anilist.co/) - Source of manga data
 - [MyAnimeList](https://myanimelist.net/) - Alternative data source
 
-## ❓ Getting Help
+## Getting Help
 
 - **Issues**: [GitHub Issues](https://github.com/mannkenn/manga-recs/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/mannkenn/manga-recs/discussions)
 - **Email**: emmanuelkim2004@gmail.com
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see [LICENSE](../LICENSE) for details.

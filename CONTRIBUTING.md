@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing! This document provides guidelines and instructions for contributing to this project.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
@@ -13,7 +13,7 @@ Thank you for your interest in contributing! This document provides guidelines a
 - [Reporting Bugs](#reporting-bugs)
 - [Suggesting Features](#suggesting-features)
 
-## 🤝 Code of Conduct
+## Code of Conduct
 
 This project adheres to a code of conduct that all contributors are expected to follow:
 
@@ -22,7 +22,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 - Focus on what is best for the community
 - Show empathy towards other community members
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Fork and Clone
 
@@ -56,7 +56,7 @@ git checkout -b feature/your-feature-name
 git checkout -b fix/bug-description
 ```
 
-## 🔄 Development Workflow
+## Development Workflow
 
 ### Branch Naming Conventions
 
@@ -99,7 +99,7 @@ docs(readme): update installation instructions
 test(data): add unit tests for cleaning functions
 ```
 
-## 📏 Code Standards
+## Code Standards
 
 ### Python Code Style
 
@@ -160,7 +160,7 @@ def create_manga_features(data: pd.DataFrame) -> pd.DataFrame:
     pass
 ```
 
-## 🧪 Testing Guidelines
+## Testing Guidelines
 
 ### Writing Tests
 
@@ -209,7 +209,7 @@ make test
 - New code coverage: **90%+**
 - Critical paths: **95%+**
 
-## 📥 Pull Request Process
+## Pull Request Process
 
 ### Before Submitting
 
@@ -275,7 +275,7 @@ Maintainers will:
 - Delete the feature branch
 - Update version numbers if needed
 
-## 🐛 Reporting Bugs
+## Reporting Bugs
 
 ### Before Reporting
 
@@ -307,7 +307,7 @@ What you expected to happen.
 Logs, screenshots, etc.
 ```
 
-## 💡 Suggesting Features
+## Suggesting Features
 
 ### Feature Request Template
 
@@ -325,25 +325,25 @@ Other approaches you've considered.
 Mockups, examples, etc.
 ```
 
-## 🎯 Good First Issues
+## Good First Issues
 
 Look for issues labeled:
 - `good first issue` - Great for newcomers
 - `help wanted` - Contributions especially welcome
 - `documentation` - Documentation improvements
 
-## 📚 Additional Resources
+## Additional Resources
 
 - [Python Style Guide (PEP 8)](https://pep8.org/)
 - [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [Next.js Documentation](https://nextjs.org/docs)
 
-## ❓ Questions?
+## Questions?
 
 Feel free to:
 - Open a discussion on GitHub
 - Reach out to maintainers
 - Ask in pull request comments
 
-Thank you for contributing! 🎉
+Thank you for contributing!
