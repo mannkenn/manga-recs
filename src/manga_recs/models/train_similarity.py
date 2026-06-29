@@ -14,9 +14,6 @@ from manga_recs.common.settings import settings
 from manga_recs.data.load.s3 import s3_dump, s3_load
 from sklearn.metrics.pairwise import cosine_similarity
 
-# paths
-FEATURE_PATH = s3_load(MANGA_FEATURES_PARQUET, bucket=settings.s3.bucket, status=FEATURES_STATUS)
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
 SIM_PATH = MODELS_DIR / COSINE_SIM_FILENAME
 
 
@@ -35,14 +32,18 @@ def compute_cosine_similarity(df):
 
 def train():
 
+    mlflow.set_experiment(settings.mlflow.experiment_name)
+
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    feature_path = s3_load(MANGA_FEATURES_PARQUET, bucket=settings.s3.bucket, status=FEATURES_STATUS)
+
     with mlflow.start_run():
-        
-        mlflow.set_experiment(settings.mlflow.experiment_name)
+
         mlflow.log_param("model_type", "cosine_similarity")
         mlflow.log_param("feature_store", "s3_parquet")
         
         print("Loading features from S3")
-        X = pd.read_parquet(FEATURE_PATH)
+        X = pd.read_parquet(feature_path)
 
         mlflow.log_metric("num_items", X.shape[0])
         mlflow.log_metric("num_features", X.shape[1])
