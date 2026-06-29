@@ -37,4 +37,12 @@ This directory contains a simple Next.js (React) application that provides a UI 
 - Specify how many similar titles to return (Top N)
 - Displays results with similarity score, description, and tags
 
-> ⚠️ Make sure CORS is configured correctly on the FastAPI backend if you bypass the proxy.
+## Deployment
+
+This app is deployed to Vercel with the repository **Root Directory** set to
+`frontend` and `BACKEND_URL` pointing at the deployed FastAPI service. See the
+top-level [`DEPLOYMENT.md`](../DEPLOYMENT.md) for full instructions.
+
+> ⚠️ Requests are proxied server-side via `/api/recommendations`, so the browser
+> never calls the backend directly. If you bypass the proxy, make sure CORS is
+> configured on the backend (`MANGA_RECS_CORS_ORIGINS`).
