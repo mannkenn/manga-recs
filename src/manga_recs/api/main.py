@@ -1,6 +1,8 @@
+import os
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from manga_recs.api.schemas import RecommendationResponse, RecommendationRequest
 import joblib
 import pandas as pd
@@ -15,6 +17,15 @@ from manga_recs.common.settings import settings
 from manga_recs.data.load import s3_load
 
 app = FastAPI(title="Manga Recommendation API")
+
+# Allowed origins are comma-separated; default to "*" for easy local/dev use.
+_cors_origins = os.getenv("MANGA_RECS_CORS_ORIGINS", "*")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @lru_cache(maxsize=1)

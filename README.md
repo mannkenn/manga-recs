@@ -92,3 +92,13 @@ Common targets:
 - `make run-pipeline`
 - `make run-train`
 - `make run-api`
+
+## Deployment
+
+The backend deploys to Render (Docker) and the frontend to Vercel. See
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) for step-by-step instructions and the
+required environment variables.
+
+The API exposes a `GET /health` endpoint for platform health checks, and CORS
+origins can be restricted via the `MANGA_RECS_CORS_ORIGINS` environment variable
+(comma-separated; defaults to `*`).

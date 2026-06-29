@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: manga-recs-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # Set these as secrets in the Render dashboard (sync: false = not stored in repo).
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_DEFAULT_REGION
+        sync: false
+      - key: MANGA_RECS_S3_BUCKET
+        sync: false
+      # Comma-separated list of allowed frontend origins, e.g. https://manga-recs.vercel.app
+      - key: MANGA_RECS_CORS_ORIGINS
+        sync: false

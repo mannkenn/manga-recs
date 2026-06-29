@@ -1,0 +1,24 @@
+.git
+.gitignore
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Frontend is deployed separately (Vercel)
+frontend
+
+# Local-only / generated
+configs/local.toml
+.env
+data/
+artifacts/
+mlruns/
+mlflow.db
+notebooks/
+*.md

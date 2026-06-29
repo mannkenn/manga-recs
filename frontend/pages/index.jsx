@@ -1,7 +1,16 @@
 import { useState } from 'react';
 
-// component state will hold whatever shape the backend returns, so tags
-// might be an array or a string. We'll normalise when rendering.
+// AniList descriptions can contain HTML; strip it for clean plain-text display.
+function stripHtml(value) {
+  if (typeof value !== 'string') return value;
+  return value.replace(/<[^>]*>/g, '').trim();
+}
+
+function formatScore(similarity) {
+  return typeof similarity === 'number'
+    ? `${Math.round(similarity * 100)}% match`
+    : similarity;
+}
 
 export default function Home() {
   const [title, setTitle] = useState('');
@@ -9,12 +18,14 @@ export default function Home() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [searched, setSearched] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setResults([]);
+    setSearched(true);
 
     try {
       const res = await fetch('/api/recommendations', {
@@ -37,61 +48,75 @@ export default function Home() {
 
   return (
     <div className="container">
-      <h1>Manga Recommendations</h1>
-      <form onSubmit={handleSubmit} style={{ marginBottom: '1.5rem' }}>
-        <div style={{ marginBottom: '0.5rem' }}>
-          <label htmlFor="title">Title:</label>
-          <input
-            id="title"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-          />
-        </div>
-        <div style={{ marginBottom: '0.5rem' }}>
-          <label htmlFor="topN">Top N:</label>
-          <input
-            id="topN"
-            type="number"
-            min={1}
-            value={topN}
-            onChange={(e) => setTopN(parseInt(e.target.value, 10))}
-            style={{ width: '4rem', marginLeft: '0.5rem' }}
-          />
-        </div>
-        <button type="submit" disabled={loading} style={{ padding: '0.5rem 1rem' }}>
-          {loading ? 'Searching...' : 'Get Recommendations'}
-        </button>
-      </form>
+      <header className="header">
+        <h1 className="title">Manga Recommendations</h1>
+        <p className="subtitle">
+          Enter a manga you like and discover similar titles from AniList.
+        </p>
+      </header>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      <div className="card">
+        <form onSubmit={handleSubmit} className="search-form">
+          <div className="field field--grow">
+            <label htmlFor="title">Manga title</label>
+            <input
+              id="title"
+              className="input"
+              type="text"
+              placeholder="e.g. Berserk"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="topN">Results</label>
+            <input
+              id="topN"
+              className="input input--small"
+              type="number"
+              min={1}
+              max={20}
+              value={topN}
+              onChange={(e) => setTopN(parseInt(e.target.value, 10))}
+            />
+          </div>
+          <button type="submit" className="btn" disabled={loading}>
+            {loading ? 'Searching…' : 'Recommend'}
+          </button>
+        </form>
+
+        {error && <p className="error">{error}</p>}
+      </div>
 
       {results.length > 0 && (
-        <div>
-          <h2>Results</h2>
-          <ul>
-            {results.map((rec) => (
-              <li key={rec.id} style={{ marginBottom: '1rem' }}>
-                <strong>{rec.title}</strong> ({
-                  // convert 0‑1 decimal score to percent string
-                  typeof rec.similarity === 'number'
-                    ? Math.round(rec.similarity * 100)
-                    : rec.similarity
-                }%)
-                <p>{rec.description}</p>
-                {rec.tags && (
-                  <p>
-                    <em>
-                      Tags: {Array.isArray(rec.tags) ? rec.tags.join(', ') : rec.tags}
-                    </em>
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <section className="results">
+          <h2 className="results-heading">Similar titles</h2>
+          {results.map((rec) => (
+            <article key={rec.id} className="rec-card">
+              <div className="rec-card__head">
+                <h3 className="rec-card__title">{rec.title}</h3>
+                <span className="score">{formatScore(rec.similarity)}</span>
+              </div>
+              {rec.description && (
+                <p className="rec-card__desc">{stripHtml(rec.description)}</p>
+              )}
+              {rec.tags && (Array.isArray(rec.tags) ? rec.tags.length > 0 : rec.tags) && (
+                <div className="tags">
+                  {(Array.isArray(rec.tags) ? rec.tags : [rec.tags]).map((tag) => (
+                    <span key={tag} className="tag">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </article>
+          ))}
+        </section>
+      )}
+
+      {!loading && searched && !error && results.length === 0 && (
+        <p className="empty">No recommendations found. Try another title.</p>
       )}
     </div>
   );
