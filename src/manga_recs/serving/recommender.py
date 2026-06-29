@@ -1,6 +1,8 @@
 import pandas as pd
 import joblib
 import argparse
+from functools import lru_cache
+
 from manga_recs.common.constants import (
     CLEANED_MANGA_METADATA_PARQUET,
     CLEANED_STATUS,
@@ -10,17 +12,22 @@ from manga_recs.common.constants import (
 from manga_recs.common.settings import settings
 from manga_recs.data.load.s3 import s3_load
 
-# Paths
-MODEL_PATH = s3_load(COSINE_SIM_FILENAME, bucket=settings.s3.bucket, status=MODELS_STATUS)
-METADATA_PATH = s3_load(CLEANED_MANGA_METADATA_PARQUET, bucket=settings.s3.bucket, status=CLEANED_STATUS)
 
-# Load similarity matrix + metadata
-SIM_MATRIX = joblib.load(MODEL_PATH)
-METADATA = pd.read_parquet(METADATA_PATH)
+@lru_cache(maxsize=1)
+def load_artifacts():
+    """Lazily download and cache the similarity matrix and metadata."""
+    model_path = s3_load(COSINE_SIM_FILENAME, bucket=settings.s3.bucket, status=MODELS_STATUS)
+    metadata_path = s3_load(CLEANED_MANGA_METADATA_PARQUET, bucket=settings.s3.bucket, status=CLEANED_STATUS)
+    sim_matrix = joblib.load(model_path)
+    metadata = pd.read_parquet(metadata_path)
+    return sim_matrix, metadata
+
 
 def get_top_n_recommendations_by_title(title, top_n=5):
     """Return top-N manga recommendations given a manga title."""
-    
+
+    SIM_MATRIX, METADATA = load_artifacts()
+
     # Find manga ID from title
     matched = METADATA[METADATA['title'].str.lower() == title.lower()]
     if matched.empty:

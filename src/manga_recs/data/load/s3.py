@@ -17,7 +17,7 @@ def s3_dump(filepath: str, filename: str, bucket: str | None = None, status: str
     if bucket is None:
         bucket = settings.s3.bucket
 
-    # Connet to s3 
+    # Connect to s3
     s3 = boto3.client(
     "s3",
     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
@@ -43,7 +43,7 @@ def get_latest_s3_file(bucket: str | None = None, status: str = 'raw'):
     if bucket is None:
         bucket = settings.s3.bucket
 
-    # Connet to s3 
+    # Connect to s3
     s3 = boto3.client(
     "s3",
     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),

@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from fastapi import FastAPI, HTTPException
 from manga_recs.api.schemas import RecommendationResponse, RecommendationRequest
 import joblib
@@ -14,19 +16,40 @@ from manga_recs.data.load import s3_load
 
 app = FastAPI(title="Manga Recommendation API")
 
-# Load similarity matrix and metadata at startup
-SIM_PATH = s3_load(COSINE_SIM_FILENAME, bucket=settings.s3.bucket, status=MODELS_STATUS)
-SIM_MATRIX = joblib.load(SIM_PATH)
 
-METADATA_PATH = s3_load(CLEANED_MANGA_METADATA_PARQUET, bucket=settings.s3.bucket, status=CLEANED_STATUS)
-METADATA = pd.read_parquet(METADATA_PATH)
+@lru_cache(maxsize=1)
+def load_artifacts():
+    """Lazily download and cache the similarity matrix and metadata."""
+    sim_path = s3_load(COSINE_SIM_FILENAME, bucket=settings.s3.bucket, status=MODELS_STATUS)
+    sim_matrix = joblib.load(sim_path)
+    metadata_path = s3_load(CLEANED_MANGA_METADATA_PARQUET, bucket=settings.s3.bucket, status=CLEANED_STATUS)
+    metadata = pd.read_parquet(metadata_path)
+    return sim_matrix, metadata
+
+
+@app.on_event("startup")
+def _warm_cache():
+    # Best-effort: preload artifacts so the first request is fast, but don't
+    # block startup if S3 is temporarily unreachable (the endpoint loads lazily).
+    try:
+        load_artifacts()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: could not preload artifacts at startup: {exc}")
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 
 @app.post("/recommendations/", response_model=RecommendationResponse)
 def recommend(request: RecommendationRequest):
     title = request.title
     top_n = request.top_n
 
-    # Find manga ID from title using fuzzy matchingq
+    SIM_MATRIX, METADATA = load_artifacts()
+
+    # Find manga ID from title using fuzzy matching
     titles = METADATA['title'].tolist()
     best_match = process.extractOne(title, titles, scorer=fuzz.ratio)
     if best_match is None or best_match[1] < settings.api.fuzzy_match_threshold:
@@ -55,7 +78,7 @@ def recommend(request: RecommendationRequest):
     recs = recs.set_index('id').join(top_similarities.rename("similarity"))
     recs['similarity'] = recs['similarity'].round(2)
 
-    # Conert dtypes for JSON serialization
+    # Convert dtypes for JSON serialization
     recs['similarity'] = recs['similarity'].apply(float)
     recs['tags'] = recs['tags'].apply(lambda x: list(x) if isinstance(x, (list, pd.Series)) else str(x))
 
