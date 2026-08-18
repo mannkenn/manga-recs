@@ -29,6 +29,21 @@ query Page($page: Int, $perPage: Int, $type: MediaType, $averageScoreGreater: In
       id
       volumes
       description
+      # Creators. Sorted by relevance so the primary staff come first, and
+      # capped because the tail of a popular title is translators, letterers,
+      # and assistants for every licensed edition. Roles are filtered during
+      # cleaning; the API has no way to request only authors.
+      staff(sort: [RELEVANCE], perPage: 12) {
+        edges {
+          role
+          node {
+            id
+            name {
+              full
+            }
+          }
+        }
+      }
     }
     pageInfo {
       hasNextPage

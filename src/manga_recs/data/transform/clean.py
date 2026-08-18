@@ -53,6 +53,79 @@ def extract_tag_names(tags):
     return []
 
 
+# Roles that make someone an author of the work rather than a contributor to a
+# particular edition. AniList returns every credited person on the staff
+# connection, so without a filter "authors" would include translators,
+# letterers, and per-language editors - which are not creative signal and would
+# link unrelated titles that happen to share an English publisher's translator.
+#
+# An allowlist rather than a denylist: an unrecognised role is excluded, so a new
+# role AniList invents cannot silently pollute the feature.
+AUTHOR_ROLES = frozenset(
+    {
+        "story & art",
+        "story and art",
+        "story",
+        "art",
+        "original story",
+        "original creator",
+        "story & layout",
+        "creator",
+    }
+)
+
+
+def normalize_staff_role(role: Any) -> str:
+    """Strip qualifiers from a staff role so it can be compared to AUTHOR_ROLES.
+
+    Real roles look like ``"Story & Art (vols 1-41)"`` or
+    ``"Translator (English: vols 5-8, 10-)"``, so the parenthetical has to go
+    before matching.
+    """
+    if not isinstance(role, str):
+        return ""
+    return re.sub(r"\([^)]*\)", "", role).strip().lower()
+
+
+def is_author_role(role: Any) -> bool:
+    return normalize_staff_role(role) in AUTHOR_ROLES
+
+
+def extract_author_names(staff: Any) -> list[str]:
+    """Pull the primary creators out of an AniList staff connection.
+
+    Returns lowercased names, deduplicated and order-preserving. A title with
+    only non-authoring staff yields an empty list rather than a wrong one.
+    """
+    if isinstance(staff, str):
+        return [staff.lower()] if staff.strip() else []
+
+    if isinstance(staff, dict):
+        edges = staff.get("edges") or []
+    elif isinstance(staff, list):
+        edges = staff
+    else:
+        return []
+
+    names: list[str] = []
+    for edge in edges:
+        if not isinstance(edge, dict) or not is_author_role(edge.get("role")):
+            continue
+
+        node = edge.get("node")
+        if not isinstance(node, dict):
+            continue
+
+        name = node.get("name")
+        full = name.get("full") if isinstance(name, dict) else name
+        if isinstance(full, str) and full.strip():
+            lowered = full.strip().lower()
+            if lowered not in names:
+                names.append(lowered)
+
+    return names
+
+
 def has_end_date(end_date):
     """Check if endDate contains None values"""
     if isinstance(end_date, dict):
@@ -104,6 +177,13 @@ def clean_manga_metadata(data: list[dict]) -> pd.DataFrame:
     df["search_titles"] = df["title"].apply(extract_search_titles)
     df["title"] = df["title"].apply(extract_english_title)
     df["tags"] = df["tags"].apply(extract_tag_names)
+    # Tolerate data ingested before `staff` was added to the query, so an older
+    # raw partition still cleans successfully instead of raising KeyError.
+    df["authors"] = (
+        df["staff"].apply(extract_author_names)
+        if "staff" in df.columns
+        else [[] for _ in range(len(df))]
+    )
     df["has_end_date"] = df["endDate"].apply(has_end_date)
     df["startDate"] = df["startDate"].apply(parse_date_to_datetime)
     df["chapters"] = df["chapters"].fillna(-1)
@@ -115,9 +195,9 @@ def clean_manga_metadata(data: list[dict]) -> pd.DataFrame:
 
     # Remove adult content
     df = df[~df["isAdult"].fillna(False).astype(bool)]
-    df = df.drop(
-        columns=["endDate", "isAdult"]
-    )  # drop endDate since we have has_end_date, and isAdult since we filtered it out
+    # endDate is superseded by has_end_date, isAdult has served its purpose, and
+    # staff is replaced by the filtered authors list.
+    df = df.drop(columns=["endDate", "isAdult", "staff"], errors="ignore")
 
     return df
 
