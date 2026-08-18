@@ -8,7 +8,8 @@ from manga_recs.common.constants import (
     MANGA_FEATURES_PARQUET,
     USER_FEATURES_PARQUET,
 )
-from manga_recs.common.paths import FEATURES_DIR
+from manga_recs.common.paths import ARTIFACTS_DIR, FEATURES_DIR
+from manga_recs.common.settings import settings
 from manga_recs.data.load import get_file, put_file
 from manga_recs.data.quality import check_frame
 from manga_recs.data.transform import create_manga_features, create_user_features
@@ -33,7 +34,14 @@ def build_features(partition: str | None = None) -> dict[str, str]:
     logger.info("Loaded %d manga records and %d user records", len(manga_data), len(user_data))
 
     manga_features = check_frame(
-        create_manga_features(manga_data),
+        create_manga_features(
+            manga_data,
+            # The fitted scaler and column order belong with the other artifacts,
+            # and this is the one caller that actually wants them persisted.
+            save_dir=ARTIFACTS_DIR / "features",
+            include_authors=settings.features.include_authors,
+            author_min_titles=settings.features.author_min_titles,
+        ),
         name="manga_features",
         required_columns=("id",),
         non_null_columns=("id",),

@@ -31,6 +31,20 @@ user_per_page = 50
 # some accounts, and a long backoff spends minutes proving what two tries showed.
 user_max_retries = 3
 
+[features]
+# Creators are ingested from the AniList `staff` connection, filtered to primary
+# authoring roles, and one-hot encoded into the similarity matrix.
+#
+# Honest caveat, measured rather than assumed: permuting the author-to-title
+# mapping produces metrics statistically indistinguishable from the real
+# assignment, so at this catalogue size the author columns are not demonstrably
+# contributing creative signal. Kept on because the encoding is correct and the
+# metrics are no worse; run scripts/author_ablation.py to reproduce.
+include_authors = true
+# Minimum titles an author must appear on to earn a feature column. 2 keeps the
+# matrix at 566 columns instead of 1629 for no measurable loss.
+author_min_titles = 2
+
 [mlflow]
 experiment_name = "manga_cosine_recommender"
 

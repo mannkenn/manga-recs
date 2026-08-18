@@ -56,8 +56,26 @@ class IngestionSettings:
 
 
 @dataclass(frozen=True)
+class FeatureSettings:
+    """Controls which signals go into the similarity matrix.
+
+    ``author_min_titles`` bounds the cardinality of the author one-hots: only
+    creators credited on at least this many titles get a column, since a single
+    credit cannot link two titles. See scripts/author_ablation.py for what the
+    author features measurably do and do not contribute.
+    """
+
+    include_authors: bool
+    author_min_titles: int
+
+
+@dataclass(frozen=True)
 class MlflowSettings:
     experiment_name: str
+    # MLflow's local filesystem store is now rejected outright, and its own
+    # default is exactly that, so training fails out of the box unless a backend
+    # is named. Default to the sqlite file the repo already anticipates.
+    tracking_uri: str
 
 
 @dataclass(frozen=True)
@@ -103,6 +121,7 @@ class Settings:
     storage: StorageSettings
     api: ApiSettings
     ingestion: IngestionSettings
+    features: FeatureSettings
     mlflow: MlflowSettings
     recommendation: RecommendationSettings
     evaluation: EvaluationSettings
@@ -196,6 +215,7 @@ def get_settings() -> Settings:
     storage = config.get("storage", {})
     api = config.get("api", {})
     ingestion = config.get("ingestion", {})
+    features = config.get("features", {})
     mlflow = config.get("mlflow", {})
     recommendation = config.get("recommendation", {})
     evaluation = config.get("evaluation", {})
@@ -244,7 +264,20 @@ def get_settings() -> Settings:
             user_per_page=int(ingestion.get("user_per_page", 50)),
             user_max_retries=int(ingestion.get("user_max_retries", 3)),
         ),
+        features=FeatureSettings(
+            include_authors=_env_bool(
+                "MANGA_RECS_INCLUDE_AUTHORS", bool(features.get("include_authors", True))
+            ),
+            author_min_titles=int(
+                os.getenv("MANGA_RECS_AUTHOR_MIN_TITLES") or features.get("author_min_titles", 2)
+            ),
+        ),
         mlflow=MlflowSettings(
+            tracking_uri=(
+                os.getenv("MLFLOW_TRACKING_URI")
+                or mlflow.get("tracking_uri")
+                or f"sqlite:///{root / 'mlflow.db'}"
+            ),
             experiment_name=os.getenv(
                 "MANGA_RECS_MLFLOW_EXPERIMENT",
                 mlflow.get("experiment_name", "manga_cosine_recommender"),
