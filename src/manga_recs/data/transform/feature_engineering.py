@@ -1,9 +1,9 @@
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MultiLabelBinarizer
-import numpy as np
-import pandas as pd 
-import joblib
 from pathlib import Path
+
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
 
 
 def parse_release_year(start_date):
@@ -33,8 +33,11 @@ def create_manga_features(data, save_dir = 'artifacts/features'):
         # Fallback: try to read with pandas (will raise a helpful error if unsupported)
         df = pd.read_parquet(data)
 
-    # Drop these for now
-    df = df.drop(columns=['title', 'volumes', 'description', 'favourites', 'meanScore'])
+    # Identity/display columns that carry no modelling signal.
+    df = df.drop(
+        columns=['title', 'search_titles', 'volumes', 'description', 'favourites', 'meanScore'],
+        errors='ignore',
+    )
     
     # Extract release year
     df['release_year'] = df['startDate'].apply(parse_release_year)

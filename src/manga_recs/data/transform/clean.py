@@ -1,9 +1,8 @@
-from manga_recs.data.utils import load_json, save_json
-from manga_recs.data.load import s3_dump
-import pandas as pd
-from pathlib import Path
-from typing import Any, Dict, List
 import re
+from typing import Any
+
+import pandas as pd
+
 
 def extract_english_title(title):
     if isinstance(title, dict):
@@ -15,6 +14,29 @@ def extract_english_title(title):
     elif isinstance(title, str):
             return title.lower()
     return None
+
+def extract_search_titles(title):
+    """Return every title variant a user might search by, lowercased and deduped.
+
+    Manga are widely known by their romaji names ("oyasumi punpun") as well as
+    their official English ones ("goodnight punpun"), so keeping only one makes
+    the other unsearchable.
+    """
+    if isinstance(title, str):
+        return [title.lower()] if title.strip() else []
+
+    if not isinstance(title, dict):
+        return []
+
+    variants = []
+    for key in ("english", "romaji", "native"):
+        value = title.get(key)
+        if isinstance(value, str) and value.strip():
+            lowered = value.lower()
+            if lowered not in variants:
+                variants.append(lowered)
+    return variants
+
 
 def extract_tag_names(tags):
     if isinstance(tags, list) and tags:
@@ -41,7 +63,7 @@ def parse_date_to_datetime(date_dict):
     if isinstance(date_dict, dict) and date_dict.get('month') and date_dict.get('year'):
         try:
             return pd.to_datetime(f"{int(date_dict['year'])}-{int(date_dict['month'])}-01")
-        except:
+        except (ValueError, TypeError):
             return pd.NaT
     return pd.NaT
 
@@ -71,10 +93,11 @@ def clean_description(text: Any) -> Any:
     return text.strip()
 
 
-def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
+def clean_manga_metadata(data: list[dict]) -> pd.DataFrame:
     """Clean manga metadata."""
     df = pd.DataFrame(data)
     # Extract English title, tag names, and end date presence, and convert dates to datetime
+    df['search_titles'] = df['title'].apply(extract_search_titles)
     df['title'] = df['title'].apply(extract_english_title)
     df['tags'] = df['tags'].apply(extract_tag_names)
     df['has_end_date'] = df['endDate'].apply(has_end_date)
@@ -87,12 +110,12 @@ def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
         df['description'] = df['description'].apply(clean_description)
     
     # Remove adult content
-    df = df[df['isAdult'] != True]
+    df = df[~df['isAdult'].fillna(False).astype(bool)]
     df = df.drop(columns=['endDate', 'isAdult']) # drop endDate since we have has_end_date, and isAdult since we filtered it out
     
     return df
 
-def clean_user_readdata(data: List[Dict]) -> pd.DataFrame:
+def clean_user_readdata(data: list[dict]) -> pd.DataFrame:
     """Clean user read data."""
     df = pd.DataFrame(data)
 
