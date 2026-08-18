@@ -61,6 +61,10 @@ experiment_name = "manga_cosine_recommender"
 
 [recommendation]
 default_top_n = 5
+# Display cap only; similarity is still computed over every tag. AniList returns
+# tags sorted by community rank, so this keeps the most relevant ones. Titles
+# carry up to 82 tags, which is unreadable in the UI and dominates the payload.
+max_tags = 8
 
 [serving]
 # Where the API reads its similarity matrix and metadata from.

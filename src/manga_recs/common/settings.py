@@ -84,6 +84,7 @@ class MlflowSettings:
 @dataclass(frozen=True)
 class RecommendationSettings:
     default_top_n: int
+    max_tags: int
 
 
 @dataclass(frozen=True)
@@ -298,6 +299,7 @@ def get_settings() -> Settings:
         ),
         recommendation=RecommendationSettings(
             default_top_n=int(recommendation.get("default_top_n", 5)),
+            max_tags=int(recommendation.get("max_tags", 8)),
         ),
         evaluation=EvaluationSettings(
             min_user_interactions=int(evaluation.get("min_user_interactions", 5)),
