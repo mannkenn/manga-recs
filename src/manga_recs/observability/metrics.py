@@ -87,6 +87,12 @@ TITLE_NOT_FOUND = Counter(
     registry=REGISTRY,
 )
 
+RATE_LIMITED = Counter(
+    "manga_recs_rate_limited_total",
+    "Requests rejected with 429 by the in-process rate limiter.",
+    registry=REGISTRY,
+)
+
 MODEL_ITEMS = Gauge(
     "manga_recs_model_items",
     "Items in the loaded similarity matrix.",
@@ -122,6 +128,10 @@ def observe_match_score(score: float) -> None:
 
 def record_title_not_found() -> None:
     TITLE_NOT_FOUND.inc()
+
+
+def record_rate_limited() -> None:
+    RATE_LIMITED.inc()
 
 
 def set_model_info(*, items: int, artifact_source: str, partition: str | None) -> None:

@@ -42,6 +42,9 @@ class StorageSettings:
 class ApiSettings:
     graphql_url: str
     fuzzy_match_threshold: int
+    rate_limit_per_minute: int
+    rate_limit_enabled: bool
+    trust_forwarded_for: bool
 
 
 @dataclass(frozen=True)
@@ -254,6 +257,16 @@ def get_settings() -> Settings:
                 "MANGA_RECS_GRAPHQL_URL", api.get("graphql_url", "https://graphql.anilist.co")
             ),
             fuzzy_match_threshold=int(api.get("fuzzy_match_threshold", 70)),
+            rate_limit_per_minute=int(
+                os.getenv("MANGA_RECS_RATE_LIMIT_PER_MINUTE")
+                or api.get("rate_limit_per_minute", 60)
+            ),
+            rate_limit_enabled=_env_bool(
+                "MANGA_RECS_RATE_LIMIT_ENABLED", bool(api.get("rate_limit_enabled", True))
+            ),
+            trust_forwarded_for=_env_bool(
+                "MANGA_RECS_TRUST_FORWARDED_FOR", bool(api.get("trust_forwarded_for", False))
+            ),
         ),
         ingestion=IngestionSettings(
             rate_limit=int(ingestion.get("rate_limit", 10)),

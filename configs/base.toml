@@ -14,6 +14,17 @@ graphql_url = "https://graphql.anilist.co"
 # Tuned against the real title index: genuine queries (including typos and
 # romaji) score >= 69, while junk queries top out around 60.
 fuzzy_match_threshold = 65
+# Abuse protection for the public demo, enforced per client per minute in this
+# process only. Generous enough that a human clicking around never sees it, low
+# enough that a scripted loop does. A single free-tier container is the whole
+# deployment, so there is nothing to share state with.
+rate_limit_per_minute = 60
+rate_limit_enabled = true
+# Off by default because X-Forwarded-For is client-supplied and spoofable, so
+# trusting it without a proxy in front hands out a trivial bypass. Turn it on
+# when the container genuinely sits behind one - Hugging Face Spaces does, and
+# without it every visitor there shares one apparent address.
+trust_forwarded_for = false
 
 [ingestion]
 # Requests per minute. AniList publishes 90/min but frequently serves a
