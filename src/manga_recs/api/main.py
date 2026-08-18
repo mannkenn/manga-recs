@@ -1,24 +1,46 @@
+"""FastAPI service exposing manga recommendations."""
+
+from __future__ import annotations
+
+import logging
 import os
-from functools import lru_cache
+import time
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from manga_recs.api.schemas import RecommendationResponse, RecommendationRequest
-import joblib
-import pandas as pd
-from rapidfuzz import fuzz, process
-from manga_recs.common.constants import (
-    CLEANED_MANGA_METADATA_PARQUET,
-    CLEANED_STATUS,
-    COSINE_SIM_FILENAME,
-    MODELS_STATUS,
+
+from manga_recs.api.schemas import (
+    HealthResponse,
+    RecommendationRequest,
+    RecommendationResponse,
 )
-from manga_recs.common.settings import settings
-from manga_recs.data.load import s3_load
+from manga_recs.serving.recommender import TitleNotFoundError, get_recommender
 
-app = FastAPI(title="Manga Recommendation API")
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
-# Allowed origins are comma-separated; default to "*" for easy local/dev use.
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Warm the artifact cache so the first real request is fast, but never fail
+    # startup on it: the endpoint loads lazily and the platform health check
+    # should be able to report an unhealthy-but-running service.
+    try:
+        get_recommender()
+    except Exception as exc:  # noqa: BLE001 - startup must not crash on storage issues
+        logger.warning("Could not preload model artifacts at startup: %s", exc)
+    yield
+
+
+app = FastAPI(
+    title="Manga Recommendation API",
+    description="Content-based manga recommendations from AniList metadata.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Comma-separated allowlist; defaults to "*" so local development just works.
 _cors_origins = os.getenv("MANGA_RECS_CORS_ORIGINS", "*")
 app.add_middleware(
     CORSMiddleware,
@@ -28,71 +50,52 @@ app.add_middleware(
 )
 
 
-@lru_cache(maxsize=1)
-def load_artifacts():
-    """Lazily download and cache the similarity matrix and metadata."""
-    sim_path = s3_load(COSINE_SIM_FILENAME, bucket=settings.s3.bucket, status=MODELS_STATUS)
-    sim_matrix = joblib.load(sim_path)
-    metadata_path = s3_load(CLEANED_MANGA_METADATA_PARQUET, bucket=settings.s3.bucket, status=CLEANED_STATUS)
-    metadata = pd.read_parquet(metadata_path)
-    return sim_matrix, metadata
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    response.headers["X-Response-Time-ms"] = f"{elapsed_ms:.1f}"
+    logger.info(
+        "%s %s -> %s in %.1fms",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
 
 
-@app.on_event("startup")
-def _warm_cache():
-    # Best-effort: preload artifacts so the first request is fast, but don't
-    # block startup if S3 is temporarily unreachable (the endpoint loads lazily).
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    """Liveness probe that also reports whether the model is resident."""
     try:
-        load_artifacts()
-    except Exception as exc:  # noqa: BLE001
-        print(f"Warning: could not preload artifacts at startup: {exc}")
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+        recommender = get_recommender()
+    except Exception:  # noqa: BLE001 - report unhealthy rather than raising
+        return HealthResponse(status="degraded", model_loaded=False)
+    return HealthResponse(
+        status="ok",
+        model_loaded=True,
+        items=int(recommender.sim_matrix.shape[0]),
+    )
 
 
 @app.post("/recommendations/", response_model=RecommendationResponse)
-def recommend(request: RecommendationRequest):
-    title = request.title
-    top_n = request.top_n
+def recommend(request: RecommendationRequest) -> RecommendationResponse:
+    try:
+        recommender = get_recommender()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Model unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail="Model artifacts unavailable.") from exc
 
-    SIM_MATRIX, METADATA = load_artifacts()
+    try:
+        match, recommendations = recommender.recommend(request.title, request.top_n)
+    except TitleNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    # Find manga ID from title using fuzzy matching
-    titles = METADATA['title'].tolist()
-    best_match = process.extractOne(title, titles, scorer=fuzz.ratio)
-    if best_match is None or best_match[1] < settings.api.fuzzy_match_threshold:
-        raise HTTPException(status_code=404, detail=f"Title '{title}' not found in metadata.")
-    matched_title = best_match[0]
-
-    matched = METADATA[METADATA['title'].str.lower() == matched_title.lower()]
-    if matched.empty:
-        raise HTTPException(status_code=404, detail=f"Title '{title}' not found in metadata.")
-    
-    manga_id = matched['id'].iloc[0]
-    
-    if manga_id not in SIM_MATRIX.index:
-        raise HTTPException(status_code=404, detail=f"Manga ID {manga_id} (from title '{title}') not found in similarity matrix.")
-
-    # Get similarity scores for this manga
-    similarities = SIM_MATRIX.loc[manga_id]
-
-    # Get top-N
-    top_similarities = similarities.sort_values(ascending=False).head(top_n)
-
-    # Get metadata for recommended manga
-    recs = METADATA[METADATA['id'].isin(top_similarities.index)][['id', 'title', 'description', 'tags']]
-
-    # Merge similarity scores
-    recs = recs.set_index('id').join(top_similarities.rename("similarity"))
-    recs['similarity'] = recs['similarity'].round(2)
-
-    # Convert dtypes for JSON serialization
-    recs['similarity'] = recs['similarity'].apply(float)
-    recs['tags'] = recs['tags'].apply(lambda x: list(x) if isinstance(x, (list, pd.Series)) else str(x))
-
-    recs = recs.sort_values(by="similarity", ascending=False)
-    
-    return RecommendationResponse(title=title, recommendations=recs.reset_index().to_dict(orient='records'))
+    return RecommendationResponse(
+        title=request.title,
+        matched_title=match.title,
+        match_score=match.score,
+        recommendations=recommendations,
+    )
