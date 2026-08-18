@@ -2,6 +2,10 @@ import argparse
 import logging
 import os
 
+# constants imports nothing heavy, so the parser can be built on a serving-only
+# install that has neither boto3 nor requests.
+from manga_recs.common.constants import DATASETS
+
 
 def _configure_logging(verbose: bool) -> None:
     logging.basicConfig(
@@ -28,7 +32,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Stages that read and write a dated partition in the object store.
     for name, help_text in (
-        ("ingest", "Fetch raw data from AniList"),
         ("clean", "Normalize raw data into validated Parquet"),
         ("features", "Build model-ready feature matrices"),
         ("pipeline", "Run ingest -> clean -> features"),
@@ -40,6 +43,22 @@ def build_parser() -> argparse.ArgumentParser:
             "--partition",
             help="Date partition (YYYY-MM-DD). Defaults to today for writes, latest for reads.",
         )
+
+    ingest_parser = subparsers.add_parser("ingest", help="Fetch raw data from AniList")
+    ingest_parser.add_argument(
+        "--partition",
+        help="Date partition (YYYY-MM-DD). Defaults to today for writes, latest for reads.",
+    )
+    ingest_parser.add_argument(
+        "--datasets",
+        nargs="+",
+        choices=DATASETS,
+        default=list(DATASETS),
+        help=(
+            "Which datasets to fetch. User read lists take far longer than manga "
+            "metadata, so a media-only schema change can re-ingest just 'manga'."
+        ),
+    )
 
     recommend_parser = subparsers.add_parser("recommend", help="Get recommendations for a title")
     recommend_parser.add_argument("title", help="Manga title to search for")
@@ -98,7 +117,7 @@ def main() -> None:
     if args.command == "ingest":
         from manga_recs.data.ingestion import ingest_data
 
-        ingest_data(partition=partition)
+        ingest_data(partition=partition, datasets=args.datasets)
     elif args.command == "clean":
         from manga_recs.data.cleaning import clean_data
 

@@ -1,3 +1,8 @@
+# The two independent raw datasets. Lives here rather than in data.ingestion so
+# the CLI can build its argument parser without importing boto3 and requests,
+# which a serving-only install does not have.
+DATASETS = ("manga", "users")
+
 RAW_STATUS = "raw"
 CLEANED_STATUS = "cleaned"
 FEATURES_STATUS = "features"
