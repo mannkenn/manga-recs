@@ -12,6 +12,7 @@ def parse_release_year(start_date):
         return start_date.year
     return np.nan
 
+
 def one_hot_encode_column(df, col):
     mlb = MultiLabelBinarizer()
     encoded = mlb.fit_transform(df[col])
@@ -19,7 +20,7 @@ def one_hot_encode_column(df, col):
     return df.join(encoded_df)
 
 
-def create_manga_features(data, save_dir = 'artifacts/features'):
+def create_manga_features(data, save_dir="artifacts/features"):
 
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -35,31 +36,33 @@ def create_manga_features(data, save_dir = 'artifacts/features'):
 
     # Identity/display columns that carry no modelling signal.
     df = df.drop(
-        columns=['title', 'search_titles', 'volumes', 'description', 'favourites', 'meanScore'],
-        errors='ignore',
+        columns=["title", "search_titles", "volumes", "description", "favourites", "meanScore"],
+        errors="ignore",
     )
-    
+
     # Extract release year
-    df['release_year'] = df['startDate'].apply(parse_release_year)
-    df = df.drop(columns=['startDate'])
+    df["release_year"] = df["startDate"].apply(parse_release_year)
+    df = df.drop(columns=["startDate"])
 
     df = df.dropna()
 
     # One hot encode tags
-    df_encoded = one_hot_encode_column(df, 'tags')
-    df_encoded = df_encoded.drop(columns=['tags'])
+    df_encoded = one_hot_encode_column(df, "tags")
+    df_encoded = df_encoded.drop(columns=["tags"])
 
     # One hot encode genres
-    df_encoded = one_hot_encode_column(df_encoded, 'genres')
-    df_encoded = df_encoded.drop(columns=['genres'])
+    df_encoded = one_hot_encode_column(df_encoded, "genres")
+    df_encoded = df_encoded.drop(columns=["genres"])
 
     # Log transform
-    df_encoded['popularity'] = np.log1p(df_encoded['popularity'])
-    df_encoded['chapters'] = np.log1p(df_encoded['chapters'].replace(-1, 0))  # Replace -1 with 0 before log
+    df_encoded["popularity"] = np.log1p(df_encoded["popularity"])
+    df_encoded["chapters"] = np.log1p(
+        df_encoded["chapters"].replace(-1, 0)
+    )  # Replace -1 with 0 before log
 
     # Standardize numerical features
     scaler = StandardScaler()
-    num_cols = ['popularity', 'chapters', 'averageScore', 'release_year']
+    num_cols = ["popularity", "chapters", "averageScore", "release_year"]
     df_encoded[num_cols] = scaler.fit_transform(df_encoded[num_cols])
 
     # Save artifacts
@@ -67,6 +70,7 @@ def create_manga_features(data, save_dir = 'artifacts/features'):
     joblib.dump(df_encoded.columns.tolist(), save_dir / "feature_columns.pkl")
 
     return df_encoded
+
 
 def create_user_features(data):
     # Accept either a path-like object or a DataFrame
@@ -77,21 +81,14 @@ def create_user_features(data):
     else:
         df = pd.read_parquet(data)
 
-    df = df.drop(columns=['createdAt', 'progress'])  # Drop createdAt since it's not useful for modeling, and progress since it has many nulls
+    df = df.drop(
+        columns=["createdAt", "progress"]
+    )  # Drop createdAt since it's not useful for modeling, and progress since it has many nulls
     # Map status to numerical representation
-    status_map = {
-        "COMPLETED": 1.0,
-        "CURRENT": 0.8,
-        "PAUSED": 0.5,
-        "PLANNING": 0.4,
-        "DROPPED": 0.1
-    }
-    
-    df['status'] = df['status'].map(status_map)
+    status_map = {"COMPLETED": 1.0, "CURRENT": 0.8, "PAUSED": 0.5, "PLANNING": 0.4, "DROPPED": 0.1}
 
-    df['interaction_strength'] = df['status'] * (df['score'] / 10)
+    df["status"] = df["status"].map(status_map)
+
+    df["interaction_strength"] = df["status"] * (df["score"] / 10)
 
     return df
-
-
-

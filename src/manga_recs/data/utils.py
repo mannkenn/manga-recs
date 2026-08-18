@@ -52,8 +52,8 @@ class MangaGraphQLClient:
             except ValueError:
                 pass
 
-        return float(min(2 ** attempt, 60))
-        
+        return float(min(2**attempt, 60))
+
     def query(self, query: str, variables: dict | None = None, max_retries: int = 8) -> dict:
         """Execute a GraphQL query, retrying transient failures.
 
@@ -116,7 +116,7 @@ class MangaGraphQLClient:
                     if "too many requests" in error_blob or '"status": 429' in error_blob:
                         time.sleep(self._retry_delay(response, attempt))
                     else:
-                        time.sleep(min(2 ** attempt, 8))
+                        time.sleep(min(2**attempt, 8))
                     continue
                 raise last_exception
 
@@ -125,7 +125,8 @@ class MangaGraphQLClient:
         if last_exception is not None:
             raise last_exception
         raise RuntimeError("GraphQL query failed without a response.")
-    
+
+
 class RateLimiter:
     def __init__(self, requests_per_minute: int):
         self.delay = 60 / requests_per_minute
@@ -137,6 +138,7 @@ class RateLimiter:
             time.sleep(self.delay - elapsed)
         self.last_call = time.time()
 
+
 def load_json(filepath: str) -> Any:
     """Load JSON file safely (UTF-8, Windows compatible)."""
     with open(filepath, encoding="utf-8-sig") as f:
@@ -145,7 +147,7 @@ def load_json(filepath: str) -> Any:
 
 def save_json(data: Any, filepath: str) -> None:
     """Save data to JSON file."""
-    with open(filepath, 'w', encoding="utf-8") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 

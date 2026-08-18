@@ -22,8 +22,12 @@ def ingest_data(partition: str | None = None) -> dict[str, str]:
 
     client = MangaGraphQLClient(settings.api.graphql_url)
 
-    manga_query = (files("manga_recs.data.extract.queries") / "manga_metadata.graphql").read_text(encoding="utf-8")
-    user_query = (files("manga_recs.data.extract.queries") / "user_readdata.graphql").read_text(encoding="utf-8")
+    manga_query = (files("manga_recs.data.extract.queries") / "manga_metadata.graphql").read_text(
+        encoding="utf-8"
+    )
+    user_query = (files("manga_recs.data.extract.queries") / "user_readdata.graphql").read_text(
+        encoding="utf-8"
+    )
 
     rate_limiter = RateLimiter(settings.ingestion.rate_limit)
 

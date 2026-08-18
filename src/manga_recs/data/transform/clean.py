@@ -7,13 +7,14 @@ import pandas as pd
 def extract_english_title(title):
     if isinstance(title, dict):
         # Prefer 'english' then fallback to other common keys
-        extracted =  title.get('english') or title.get('romaji') or title.get('native') or None
+        extracted = title.get("english") or title.get("romaji") or title.get("native") or None
         if extracted:
             return extracted.lower()
         return None
     elif isinstance(title, str):
-            return title.lower()
+        return title.lower()
     return None
+
 
 def extract_search_titles(title):
     """Return every title variant a user might search by, lowercased and deduped.
@@ -40,7 +41,7 @@ def extract_search_titles(title):
 
 def extract_tag_names(tags):
     if isinstance(tags, list) and tags:
-        names = [t.get('name') for t in tags if isinstance(t, dict) and t.get('name')]
+        names = [t.get("name") for t in tags if isinstance(t, dict) and t.get("name")]
         if names:
             return [n.lower() for n in names]
 
@@ -51,6 +52,7 @@ def extract_tag_names(tags):
     # Return empty list when no tags are available
     return []
 
+
 def has_end_date(end_date):
     """Check if endDate contains None values"""
     if isinstance(end_date, dict):
@@ -58,14 +60,16 @@ def has_end_date(end_date):
         return int(not any(v is None for v in end_date.values()))
     return 0  # If it's not a dict or is None itself
 
+
 def parse_date_to_datetime(date_dict):
     """Convert date dict with month and year to datetime"""
-    if isinstance(date_dict, dict) and date_dict.get('month') and date_dict.get('year'):
+    if isinstance(date_dict, dict) and date_dict.get("month") and date_dict.get("year"):
         try:
             return pd.to_datetime(f"{int(date_dict['year'])}-{int(date_dict['month'])}-01")
         except (ValueError, TypeError):
             return pd.NaT
     return pd.NaT
+
 
 def clean_description(text: Any) -> Any:
     """Sanitize manga description strings.
@@ -97,23 +101,26 @@ def clean_manga_metadata(data: list[dict]) -> pd.DataFrame:
     """Clean manga metadata."""
     df = pd.DataFrame(data)
     # Extract English title, tag names, and end date presence, and convert dates to datetime
-    df['search_titles'] = df['title'].apply(extract_search_titles)
-    df['title'] = df['title'].apply(extract_english_title)
-    df['tags'] = df['tags'].apply(extract_tag_names)
-    df['has_end_date'] = df['endDate'].apply(has_end_date)
-    df['startDate'] = df['startDate'].apply(parse_date_to_datetime)
-    df['chapters'] = df['chapters'].fillna(-1)
-    df['volumes'] = df['volumes'].fillna(-1)
+    df["search_titles"] = df["title"].apply(extract_search_titles)
+    df["title"] = df["title"].apply(extract_english_title)
+    df["tags"] = df["tags"].apply(extract_tag_names)
+    df["has_end_date"] = df["endDate"].apply(has_end_date)
+    df["startDate"] = df["startDate"].apply(parse_date_to_datetime)
+    df["chapters"] = df["chapters"].fillna(-1)
+    df["volumes"] = df["volumes"].fillna(-1)
 
     # clean descriptions if present
-    if 'description' in df.columns:
-        df['description'] = df['description'].apply(clean_description)
-    
+    if "description" in df.columns:
+        df["description"] = df["description"].apply(clean_description)
+
     # Remove adult content
-    df = df[~df['isAdult'].fillna(False).astype(bool)]
-    df = df.drop(columns=['endDate', 'isAdult']) # drop endDate since we have has_end_date, and isAdult since we filtered it out
-    
+    df = df[~df["isAdult"].fillna(False).astype(bool)]
+    df = df.drop(
+        columns=["endDate", "isAdult"]
+    )  # drop endDate since we have has_end_date, and isAdult since we filtered it out
+
     return df
+
 
 def clean_user_readdata(data: list[dict]) -> pd.DataFrame:
     """Clean user read data."""

@@ -43,6 +43,7 @@ def fetch_user_data(
     all_media: list[dict] = []
     total_users = end_user_id - start_user_id + 1
     users_with_data = 0
+    users_skipped = 0
 
     for index, user_id in enumerate(range(start_user_id, end_user_id + 1), start=1):
         page = 1
@@ -68,6 +69,7 @@ def fetch_user_data(
 
                 if "private user" in response_text or "not found" in response_text:
                     skipped_user = True
+                    logger.debug("Skipping user %d: private or unavailable", user_id)
                     break
 
                 if status_code in {500, 502, 503, 504} or "internal server error" in response_text:
@@ -92,6 +94,8 @@ def fetch_user_data(
 
             page += 1
 
+        if skipped_user:
+            users_skipped += 1
         if fetched_for_user:
             users_with_data += 1
         if page > max_pages:
@@ -99,17 +103,19 @@ def fetch_user_data(
 
         if index % 25 == 0 or index == total_users:
             logger.info(
-                "Users %d/%d scanned | %d with data | %d entries collected",
+                "Users %d/%d scanned | %d with data | %d skipped | %d entries collected",
                 index,
                 total_users,
                 users_with_data,
+                users_skipped,
                 len(all_media),
             )
 
     logger.info(
-        "Finished %d users: %d had data, %d total entries",
+        "Finished %d users: %d had data, %d skipped, %d total entries",
         total_users,
         users_with_data,
+        users_skipped,
         len(all_media),
     )
     return all_media

@@ -10,6 +10,7 @@ Start the dependency with ``docker compose up -d minio minio-init``.
 from __future__ import annotations
 
 import socket
+from dataclasses import replace
 
 import pytest
 
@@ -22,6 +23,7 @@ from manga_recs.data.load import (
     list_partitions,
     put_file,
 )
+from manga_recs.data.load import object_store as object_store_module
 
 
 def _minio_reachable() -> bool:
@@ -45,6 +47,20 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module", autouse=True)
 def bucket():
     ensure_bucket()
+
+
+@pytest.fixture(autouse=True)
+def download_dir(tmp_path, monkeypatch):
+    """Point downloads at a temp dir instead of the working tree's ``data/``.
+
+    ``get_file`` caches under ``settings.paths.data_dir``, so without this the
+    suite scatters fixture files through the real data directory - including
+    into ``data/raw/``, where a stray partition would be visible to the
+    pipeline's own "latest partition" resolution.
+    """
+    redirected = replace(settings, paths=replace(settings.paths, data_dir=tmp_path / "store"))
+    monkeypatch.setattr(object_store_module, "settings", redirected)
+    return redirected.paths.data_dir
 
 
 @pytest.fixture
@@ -114,11 +130,11 @@ def test_uploading_a_missing_file_raises(tmp_path):
         put_file(tmp_path / "nope.txt", "nope.txt", "raw")
 
 
-def test_failed_download_leaves_no_partial_file(tmp_path, sample_file):
+def test_failed_download_leaves_no_partial_file(download_dir, sample_file):
     put_file(sample_file, "present.txt", "partialtest", partition="2020-01-01")
     with pytest.raises(ObjectStoreError):
         get_file("absent.txt", "partialtest", partition="2020-01-01", use_cache=False)
 
-    expected = settings.paths.data_dir / "partialtest" / "2020-01-01" / "absent.txt"
+    expected = download_dir / "partialtest" / "2020-01-01" / "absent.txt"
     assert not expected.exists()
     assert not expected.with_suffix(".txt.part").exists()
