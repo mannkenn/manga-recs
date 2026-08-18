@@ -16,6 +16,7 @@ import pandas as pd
 from rapidfuzz import fuzz, process
 
 from manga_recs.common.settings import settings
+from manga_recs.observability.tracing import span
 from manga_recs.serving import artifacts
 
 logger = logging.getLogger(__name__)
@@ -97,9 +98,10 @@ class Recommender:
         Defaults to the baked-in bundle when one is present, so a deployed
         container serves without credentials or network access.
         """
-        resolved = artifacts.resolve(source=source, partition=partition)
-        sim_matrix = joblib.load(resolved.model_path)
-        metadata = pd.read_parquet(resolved.metadata_path)
+        with span("recommender.load", **{"manga_recs.artifact_source": source or "auto"}):
+            resolved = artifacts.resolve(source=source, partition=partition)
+            sim_matrix = joblib.load(resolved.model_path)
+            metadata = pd.read_parquet(resolved.metadata_path)
         logger.info(
             "Loaded recommender from %s: %d items in similarity matrix, %d metadata rows",
             resolved.source,
@@ -122,7 +124,19 @@ class Recommender:
         matches "existence". token_sort_ratio stays length-aware while still
         tolerating word-order differences.
         """
-        best = process.extractOne(title.lower(), self._search_titles, scorer=fuzz.token_sort_ratio)
+        with span(
+            "recommender.match_title",
+            **{
+                "manga_recs.index_size": len(self._search_titles),
+                "manga_recs.fuzzy_threshold": self.fuzzy_threshold,
+            },
+        ) as current:
+            best = process.extractOne(
+                title.lower(), self._search_titles, scorer=fuzz.token_sort_ratio
+            )
+            if current is not None and best is not None:
+                current.set_attribute("manga_recs.match_score", float(best[1]))
+
         if best is None or best[1] < self.fuzzy_threshold:
             raise TitleNotFoundError(f"No manga matching '{title}'.")
 
@@ -145,12 +159,13 @@ class Recommender:
         top_n = top_n or settings.recommendation.default_top_n
         match = self.match_title(title)
 
-        similarities = (
-            self.sim_matrix.loc[match.manga_id]
-            .drop(index=match.manga_id, errors="ignore")
-            .sort_values(ascending=False)
-            .head(top_n)
-        )
+        with span("recommender.rank", **{"manga_recs.top_n": top_n}):
+            similarities = (
+                self.sim_matrix.loc[match.manga_id]
+                .drop(index=match.manga_id, errors="ignore")
+                .sort_values(ascending=False)
+                .head(top_n)
+            )
 
         available = [col for col in RESULT_COLUMNS if col in self.metadata.columns]
         recs = self.metadata[self.metadata["id"].isin(similarities.index)][available]
