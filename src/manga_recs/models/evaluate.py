@@ -23,9 +23,15 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# AniList statuses that indicate a user actually engaged with the title.
-POSITIVE_STATUSES = frozenset({"COMPLETED", "CURRENT", "REPEATING"})
-POSITIVE_SCORE_THRESHOLD = 7.0
+# Minimum graded interaction strength that counts as a positive.
+#
+# Strength is status_weight * normalised_score (see create_user_features), so
+# 0.5 admits a completed or currently-reading title at an average-or-better
+# rating and excludes planning, dropped, and titles the user finished but rated
+# poorly. It replaces a status allowlist OR'd with `score >= 7.0`, which was
+# wrong twice over: AniList scores are 0-100, so 7.0 admitted anything rated at
+# all, including 104 titles users had explicitly dropped.
+POSITIVE_STRENGTH_THRESHOLD = 0.5
 
 
 @dataclass(frozen=True)
@@ -49,17 +55,19 @@ class Metrics:
 
 
 def build_positive_interactions(user_df: pd.DataFrame) -> pd.DataFrame:
-    """Reduce raw read lists to (userId, mediaId) pairs we treat as positive.
+    """Reduce read lists to the (userId, mediaId) pairs we treat as positive.
 
-    A title counts as positive if the user finished//is reading it, or rated it
-    at least ``POSITIVE_SCORE_THRESHOLD``. Scores on AniList are frequently 0
-    meaning "unrated", so status carries most of the signal.
+    Relevance is defined in exactly one place, ``create_user_features``, and this
+    thresholds its output. Accepts either the cleaned read lists or the already
+    featurised frame, so the evaluation can consume the published
+    user_features.parquet rather than reimplementing the definition and drifting
+    from it - which is precisely what had happened.
     """
-    df = user_df.copy()
-    status = df["status"].astype("string").str.upper()
-    score = pd.to_numeric(df["score"], errors="coerce").fillna(0.0)
+    from manga_recs.data.transform import create_user_features
 
-    is_positive = status.isin(POSITIVE_STATUSES) | (score >= POSITIVE_SCORE_THRESHOLD)
+    df = user_df if "interaction_strength" in user_df.columns else create_user_features(user_df)
+
+    is_positive = df["interaction_strength"] >= POSITIVE_STRENGTH_THRESHOLD
     positives = df.loc[is_positive.fillna(False), ["userId", "mediaId"]].drop_duplicates()
 
     logger.info("Kept %d positive interactions out of %d total", len(positives), len(df))
@@ -236,17 +244,30 @@ def run_evaluation(partition: str | None = None) -> list[Metrics]:
         CLEANED_USER_READDATA_PARQUET,
         COSINE_SIM_FILENAME,
         EVALUATION_METRICS_JSON,
+        FEATURES_STATUS,
         METRICS_STATUS,
         MODELS_STATUS,
+        USER_FEATURES_PARQUET,
     )
     from manga_recs.common.paths import MODELS_DIR
     from manga_recs.common.settings import settings
     from manga_recs.data.load import get_file, put_file
 
     sim_matrix = joblib.load(get_file(COSINE_SIM_FILENAME, MODELS_STATUS, partition=partition))
-    user_df = pd.read_parquet(
-        get_file(CLEANED_USER_READDATA_PARQUET, CLEANED_STATUS, partition=partition)
-    )
+
+    # Prefer the published interaction table: it is the artifact the features
+    # stage exists to produce, and reading it here means the graded strengths
+    # that define relevance are computed once rather than re-derived. Older
+    # partitions predate it, so fall back to the cleaned read lists.
+    try:
+        user_df = pd.read_parquet(
+            get_file(USER_FEATURES_PARQUET, FEATURES_STATUS, partition=partition)
+        )
+    except Exception as exc:  # noqa: BLE001 - any retrieval failure is a fallback
+        logger.info("No published user features (%s); deriving them from cleaned data.", exc)
+        user_df = pd.read_parquet(
+            get_file(CLEANED_USER_READDATA_PARQUET, CLEANED_STATUS, partition=partition)
+        )
     metadata = pd.read_parquet(
         get_file(CLEANED_MANGA_METADATA_PARQUET, CLEANED_STATUS, partition=partition)
     )

@@ -23,12 +23,20 @@ class TestBuildPositiveInteractions:
         )
         assert set(build_positive_interactions(df)["mediaId"]) == {10, 11}
 
-    def test_keeps_highly_rated_regardless_of_status(self):
-        df = pd.DataFrame({"userId": [1], "mediaId": [10], "status": ["DROPPED"], "score": [9]})
-        assert len(build_positive_interactions(df)) == 1
+    def test_a_dropped_title_is_not_positive_even_when_highly_rated(self):
+        """Deliberate change of definition.
+
+        The old rule OR'd status against `score >= 7.0` on what it assumed was a
+        0-10 scale. AniList scores are 0-100, so that clause admitted anything
+        rated at all, including 104 titles users had explicitly dropped.
+        Abandoning a title is a stronger statement than the score beside it, so
+        status now dominates.
+        """
+        df = pd.DataFrame({"userId": [1], "mediaId": [10], "status": ["DROPPED"], "score": [90]})
+        assert len(build_positive_interactions(df)) == 0
 
     def test_drops_low_rated_non_engaged(self):
-        df = pd.DataFrame({"userId": [1], "mediaId": [10], "status": ["DROPPED"], "score": [2]})
+        df = pd.DataFrame({"userId": [1], "mediaId": [10], "status": ["DROPPED"], "score": [20]})
         assert len(build_positive_interactions(df)) == 0
 
     def test_deduplicates(self):
