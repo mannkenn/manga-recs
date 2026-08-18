@@ -268,15 +268,27 @@ def run_evaluation(partition: str | None = None) -> list[Metrics]:
     metrics_path = MODELS_DIR / EVALUATION_METRICS_JSON
     metrics_path.write_text(metrics_to_json(metrics), encoding="utf-8")
 
-    mlflow.set_experiment(settings.mlflow.experiment_name)
-    with mlflow.start_run(run_name="evaluation"):
-        mlflow.log_param("k", settings.evaluation.k)
-        mlflow.log_param("test_fraction", settings.evaluation.test_fraction)
-        mlflow.log_param("min_user_interactions", settings.evaluation.min_user_interactions)
-        mlflow.log_metric("users_evaluated", metrics[0].users_evaluated)
-        for entry in metrics:
-            mlflow.log_metrics(entry.as_mlflow_metrics())
-        mlflow.log_artifact(str(metrics_path))
+    # Same reasoning as training: a tracking backend that is missing or in a
+    # deprecated mode must not throw away a completed evaluation. The metrics are
+    # already written to disk and published below regardless.
+    try:
+        mlflow.set_tracking_uri(settings.mlflow.tracking_uri)
+        mlflow.set_experiment(settings.mlflow.experiment_name)
+        with mlflow.start_run(run_name="evaluation"):
+            mlflow.log_param("k", settings.evaluation.k)
+            mlflow.log_param("test_fraction", settings.evaluation.test_fraction)
+            mlflow.log_param("min_user_interactions", settings.evaluation.min_user_interactions)
+            mlflow.log_param("include_authors", settings.features.include_authors)
+            mlflow.log_metric("users_evaluated", metrics[0].users_evaluated)
+            for entry in metrics:
+                mlflow.log_metrics(entry.as_mlflow_metrics())
+            mlflow.log_artifact(str(metrics_path))
+    except Exception as exc:  # noqa: BLE001 - never lose results to tracking
+        logger.warning(
+            "MLflow tracking unavailable (%s); metrics were still written and published.",
+            exc,
+            extra={"event": "mlflow.unavailable"},
+        )
 
     put_file(metrics_path, EVALUATION_METRICS_JSON, METRICS_STATUS, partition=partition)
     return metrics
