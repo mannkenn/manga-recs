@@ -101,7 +101,7 @@ class Recommender:
         with span("recommender.load", **{"manga_recs.artifact_source": source or "auto"}):
             resolved = artifacts.resolve(source=source, partition=partition)
             sim_matrix = joblib.load(resolved.model_path)
-            metadata = pd.read_parquet(resolved.metadata_path)
+            metadata = artifacts.read_bundle_metadata(resolved.metadata_path)
         logger.info(
             "Loaded recommender from %s: %d items in similarity matrix, %d metadata rows",
             resolved.source,

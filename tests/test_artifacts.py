@@ -153,13 +153,98 @@ class TestBuildBundle:
         resolved = artifacts.build_bundle(partition="2026-08-07", bundle_dir=target)
 
         assert (target / COSINE_SIM_FILENAME).exists()
-        assert (target / CLEANED_MANGA_METADATA_PARQUET).exists()
+        assert (target / artifacts.BUNDLE_METADATA_FILENAME).exists()
 
         manifest = json.loads((target / artifacts.MANIFEST_FILENAME).read_text())
         assert manifest["partition"] == "2026-08-07"
         assert manifest["source_backend"] == "test-backend"
-        assert set(manifest["files"]) == {COSINE_SIM_FILENAME, CLEANED_MANGA_METADATA_PARQUET}
+        assert set(manifest["files"]) == {
+            COSINE_SIM_FILENAME,
+            artifacts.BUNDLE_METADATA_FILENAME,
+        }
         assert resolved.source == "bundle"
 
         # The copy has to be loadable, not merely present.
         assert isinstance(joblib.load(target / COSINE_SIM_FILENAME), pd.DataFrame)
+
+
+class TestBundleMetadataFormat:
+    """The bundle stores metadata as gzipped JSON so the serving image does not
+    need pyarrow, which was 143 MB installed to read one small file."""
+
+    def test_round_trips_the_table(self, tmp_path, catalog_metadata):
+        source = tmp_path / "in.parquet"
+        dest = tmp_path / artifacts.BUNDLE_METADATA_FILENAME
+        catalog_metadata.to_parquet(source)
+
+        artifacts._write_bundle_metadata(source, dest)
+        loaded = artifacts.read_bundle_metadata(dest)
+
+        assert list(loaded.columns) == list(catalog_metadata.columns)
+        assert len(loaded) == len(catalog_metadata)
+        assert loaded["title"].tolist() == catalog_metadata["title"].tolist()
+
+    def test_list_columns_survive(self, tmp_path, catalog_metadata):
+        """Genres and tags are lists; a CSV round trip would flatten them."""
+        source = tmp_path / "in.parquet"
+        dest = tmp_path / artifacts.BUNDLE_METADATA_FILENAME
+        catalog_metadata.to_parquet(source)
+
+        artifacts._write_bundle_metadata(source, dest)
+        loaded = artifacts.read_bundle_metadata(dest)
+
+        for column in ("genres", "tags"):
+            if column in catalog_metadata.columns:
+                assert isinstance(loaded[column].iloc[0], list)
+                assert list(loaded[column].iloc[0]) == list(catalog_metadata[column].iloc[0])
+
+    def test_is_smaller_than_the_parquet_it_replaces(self, tmp_path, catalog_metadata):
+        source = tmp_path / "in.parquet"
+        dest = tmp_path / artifacts.BUNDLE_METADATA_FILENAME
+        catalog_metadata.to_parquet(source)
+        artifacts._write_bundle_metadata(source, dest)
+        # Gzipped JSON beats Parquet on the real catalogue (368 KB vs 495 KB);
+        # on a four-row fixture just assert it stays in the same ballpark.
+        assert dest.stat().st_size < source.stat().st_size * 3
+
+    def test_a_legacy_parquet_bundle_still_resolves(self, tmp_path, catalog_metadata):
+        """A bundle built before the format change must not read as absent."""
+        bundle_dir = tmp_path / "legacy"
+        bundle_dir.mkdir()
+        (bundle_dir / COSINE_SIM_FILENAME).write_bytes(b"placeholder")
+        catalog_metadata.to_parquet(bundle_dir / CLEANED_MANGA_METADATA_PARQUET)
+
+        assert artifacts.bundle_is_present(bundle_dir)
+        _, metadata_path = artifacts.bundle_paths(bundle_dir)
+        assert metadata_path.name == CLEANED_MANGA_METADATA_PARQUET
+
+    def test_json_wins_when_a_bundle_holds_both(self, tmp_path, catalog_metadata):
+        bundle_dir = tmp_path / "both"
+        bundle_dir.mkdir()
+        (bundle_dir / COSINE_SIM_FILENAME).write_bytes(b"placeholder")
+        catalog_metadata.to_parquet(bundle_dir / CLEANED_MANGA_METADATA_PARQUET)
+        artifacts._write_bundle_metadata(
+            bundle_dir / CLEANED_MANGA_METADATA_PARQUET,
+            bundle_dir / artifacts.BUNDLE_METADATA_FILENAME,
+        )
+
+        _, metadata_path = artifacts.bundle_paths(bundle_dir)
+        assert metadata_path.name == artifacts.BUNDLE_METADATA_FILENAME
+
+    def test_rebuilding_removes_the_superseded_parquet(self, tmp_path, monkeypatch, bundle):
+        """Leaving both behind would make the stale one a trap, not a fallback."""
+        target = tmp_path / "out"
+        target.mkdir()
+        # Simulate a bundle directory that already holds the old format.
+        (target / CLEANED_MANGA_METADATA_PARQUET).write_bytes(b"stale")
+
+        monkeypatch.setattr(
+            "manga_recs.data.load.get_file",
+            lambda filename, status, partition=None, **kwargs: bundle / filename,
+        )
+        monkeypatch.setattr("manga_recs.data.load.describe_backend", lambda: "test-backend")
+
+        artifacts.build_bundle(partition="2026-08-07", bundle_dir=target)
+
+        assert not (target / CLEANED_MANGA_METADATA_PARQUET).exists()
+        assert (target / artifacts.BUNDLE_METADATA_FILENAME).exists()

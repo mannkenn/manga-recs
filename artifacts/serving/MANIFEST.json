@@ -1,13 +1,13 @@
 {
   "partition": "2026-08-18",
-  "built_at": "2026-08-18T17:21:40+00:00",
+  "built_at": "2026-08-18T17:26:00+00:00",
   "source_backend": "manga-recs @ http://localhost:9000 (region=us-east-1)",
   "files": {
     "cosine_sim.pkl": {
       "bytes": 7466004
     },
-    "cleaned_manga_metadata.parquet": {
-      "bytes": 495013
+    "manga_metadata.json.gz": {
+      "bytes": 368151
     }
   }
 }
