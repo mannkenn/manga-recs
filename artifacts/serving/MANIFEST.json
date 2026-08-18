@@ -1,13 +1,13 @@
 {
-  "partition": "2026-08-07",
-  "built_at": "2026-08-18T16:02:16+00:00",
-  "source_backend": "local artifacts/ + data/cleaned (pre-bundle bootstrap)",
+  "partition": "2026-08-18",
+  "built_at": "2026-08-18T16:38:26+00:00",
+  "source_backend": "manga-recs @ http://localhost:9000 (region=us-east-1)",
   "files": {
-    "cleaned_manga_metadata.parquet": {
-      "bytes": 477701
-    },
     "cosine_sim.pkl": {
-      "bytes": 7435124
+      "bytes": 7466004
+    },
+    "cleaned_manga_metadata.parquet": {
+      "bytes": 495013
     }
   }
 }
