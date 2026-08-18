@@ -1,33 +1,55 @@
+# Patterns for project-root directories are anchored with a leading slash.
+# Unanchored, a name like `data/` matches at every depth and would silently
+# ignore the `src/manga_recs/data/` package.
+
 # ide settings
 .vscode/
 
 # venv
-venv/
-.venv/
-env/
+/venv/
+/.venv/
+/env/
 
 # byte-code
-__pycache__/    
+__pycache__/
 
 # env vars
 .env
+.env.*
+!.env.example
 
 # local runtime config
-configs/local.toml
+/configs/local.toml
 
 # dist
 *.egg-info/
+/build/
+/dist/
 
 # mlops
-mlflow.db
-mlruns/
-artifacts/
+/mlflow.db
+/mlruns/
+# Ignore generated artifacts, but track artifacts/serving: those two files are
+# baked into the demo image so it serves with no bucket and no credentials.
+# ~7.9 MB total, well under any limit, and it makes the demo reproducible from a
+# clone. Excluding the directory's contents rather than the directory itself,
+# because git cannot re-include a path whose parent is excluded.
+/artifacts/*
+!/artifacts/serving/
 
 # experimentation
-notebooks/
+/notebooks/
 
 # generated data artifacts
-data/raw/
-data/cleaned/
-data/features/
-data/models/
+/data/
+
+# test + lint caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# airflow local state
+/airflow/logs/
+/airflow/plugins/

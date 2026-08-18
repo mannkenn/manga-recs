@@ -57,6 +57,8 @@ button {
   color: var(--muted);
   margin: 0;
   font-size: 0.95rem;
+  line-height: 1.55;
+  max-width: 56ch;
 }
 
 .card {
@@ -128,6 +130,44 @@ button {
   cursor: not-allowed;
 }
 
+/* Example queries: a content-based recommender is only usable if you know what
+   is in the catalogue, so give visitors a working starting point. */
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
+
+.examples__label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-right: 0.15rem;
+}
+
+.chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.8rem;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.chip:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .error {
   margin-top: 1rem;
   color: var(--danger);
@@ -153,6 +193,21 @@ button {
   margin: 0;
 }
 
+.results-matched {
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.75;
+}
+
+.results-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
 .rec-card {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -162,7 +217,7 @@ button {
 
 .rec-card__head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
 }
@@ -171,6 +226,33 @@ button {
   font-size: 1.05rem;
   font-weight: 600;
   margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.rec-card__rank {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* A bar makes the gap between a 0.66 and a 0.61 match legible at a glance,
+   which the number alone does not. */
+.meter {
+  height: 3px;
+  background: var(--panel-2);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 0.7rem;
+}
+
+.meter__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
 }
 
 .score {
@@ -189,6 +271,12 @@ button {
   font-size: 0.9rem;
   line-height: 1.5;
   margin: 0.6rem 0 0;
+  /* AniList synopses run to several hundred words; clamp so a page of results
+     stays scannable instead of becoming a wall of text. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .tags {
@@ -207,9 +295,68 @@ button {
   padding: 0.15rem 0.5rem;
 }
 
+/* Genres come from a small controlled vocabulary and tags from a long tail, so
+   they are worth distinguishing rather than showing as one undifferentiated pile. */
+.tag--genre {
+  color: var(--text);
+  border-color: #3a4056;
+}
+
 .empty {
   margin-top: 2rem;
   color: var(--muted);
   text-align: center;
   font-size: 0.9rem;
+}
+
+.footer {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.footer a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.footer__sep {
+  opacity: 0.5;
+}
+
+@media (max-width: 560px) {
+  .container {
+    padding: 2rem 1rem 3rem;
+  }
+
+  .title {
+    font-size: 1.6rem;
+  }
+
+  /* Stack the form so the title field and the button are both full width and
+     comfortably tappable rather than squeezed onto one row. */
+  .search-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .input--small {
+    width: 100%;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 0.75rem 1.1rem;
+  }
+
+  .rec-card__head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
 }

@@ -1,24 +1,47 @@
-from manga_recs.data.utils import load_json, save_json
-from manga_recs.data.load import s3_dump
-import pandas as pd
-from pathlib import Path
-from typing import Any, Dict, List
 import re
+from typing import Any
+
+import pandas as pd
+
 
 def extract_english_title(title):
     if isinstance(title, dict):
         # Prefer 'english' then fallback to other common keys
-        extracted =  title.get('english') or title.get('romaji') or title.get('native') or None
+        extracted = title.get("english") or title.get("romaji") or title.get("native") or None
         if extracted:
             return extracted.lower()
         return None
     elif isinstance(title, str):
-            return title.lower()
+        return title.lower()
     return None
+
+
+def extract_search_titles(title):
+    """Return every title variant a user might search by, lowercased and deduped.
+
+    Manga are widely known by their romaji names ("oyasumi punpun") as well as
+    their official English ones ("goodnight punpun"), so keeping only one makes
+    the other unsearchable.
+    """
+    if isinstance(title, str):
+        return [title.lower()] if title.strip() else []
+
+    if not isinstance(title, dict):
+        return []
+
+    variants = []
+    for key in ("english", "romaji", "native"):
+        value = title.get(key)
+        if isinstance(value, str) and value.strip():
+            lowered = value.lower()
+            if lowered not in variants:
+                variants.append(lowered)
+    return variants
+
 
 def extract_tag_names(tags):
     if isinstance(tags, list) and tags:
-        names = [t.get('name') for t in tags if isinstance(t, dict) and t.get('name')]
+        names = [t.get("name") for t in tags if isinstance(t, dict) and t.get("name")]
         if names:
             return [n.lower() for n in names]
 
@@ -29,6 +52,80 @@ def extract_tag_names(tags):
     # Return empty list when no tags are available
     return []
 
+
+# Roles that make someone an author of the work rather than a contributor to a
+# particular edition. AniList returns every credited person on the staff
+# connection, so without a filter "authors" would include translators,
+# letterers, and per-language editors - which are not creative signal and would
+# link unrelated titles that happen to share an English publisher's translator.
+#
+# An allowlist rather than a denylist: an unrecognised role is excluded, so a new
+# role AniList invents cannot silently pollute the feature.
+AUTHOR_ROLES = frozenset(
+    {
+        "story & art",
+        "story and art",
+        "story",
+        "art",
+        "original story",
+        "original creator",
+        "story & layout",
+        "creator",
+    }
+)
+
+
+def normalize_staff_role(role: Any) -> str:
+    """Strip qualifiers from a staff role so it can be compared to AUTHOR_ROLES.
+
+    Real roles look like ``"Story & Art (vols 1-41)"`` or
+    ``"Translator (English: vols 5-8, 10-)"``, so the parenthetical has to go
+    before matching.
+    """
+    if not isinstance(role, str):
+        return ""
+    return re.sub(r"\([^)]*\)", "", role).strip().lower()
+
+
+def is_author_role(role: Any) -> bool:
+    return normalize_staff_role(role) in AUTHOR_ROLES
+
+
+def extract_author_names(staff: Any) -> list[str]:
+    """Pull the primary creators out of an AniList staff connection.
+
+    Returns lowercased names, deduplicated and order-preserving. A title with
+    only non-authoring staff yields an empty list rather than a wrong one.
+    """
+    if isinstance(staff, str):
+        return [staff.lower()] if staff.strip() else []
+
+    if isinstance(staff, dict):
+        edges = staff.get("edges") or []
+    elif isinstance(staff, list):
+        edges = staff
+    else:
+        return []
+
+    names: list[str] = []
+    for edge in edges:
+        if not isinstance(edge, dict) or not is_author_role(edge.get("role")):
+            continue
+
+        node = edge.get("node")
+        if not isinstance(node, dict):
+            continue
+
+        name = node.get("name")
+        full = name.get("full") if isinstance(name, dict) else name
+        if isinstance(full, str) and full.strip():
+            lowered = full.strip().lower()
+            if lowered not in names:
+                names.append(lowered)
+
+    return names
+
+
 def has_end_date(end_date):
     """Check if endDate contains None values"""
     if isinstance(end_date, dict):
@@ -36,14 +133,16 @@ def has_end_date(end_date):
         return int(not any(v is None for v in end_date.values()))
     return 0  # If it's not a dict or is None itself
 
+
 def parse_date_to_datetime(date_dict):
     """Convert date dict with month and year to datetime"""
-    if isinstance(date_dict, dict) and date_dict.get('month') and date_dict.get('year'):
+    if isinstance(date_dict, dict) and date_dict.get("month") and date_dict.get("year"):
         try:
             return pd.to_datetime(f"{int(date_dict['year'])}-{int(date_dict['month'])}-01")
-        except:
+        except (ValueError, TypeError):
             return pd.NaT
     return pd.NaT
+
 
 def clean_description(text: Any) -> Any:
     """Sanitize manga description strings.
@@ -71,28 +170,39 @@ def clean_description(text: Any) -> Any:
     return text.strip()
 
 
-def clean_manga_metadata(data: List[Dict]) -> pd.DataFrame:
+def clean_manga_metadata(data: list[dict]) -> pd.DataFrame:
     """Clean manga metadata."""
     df = pd.DataFrame(data)
     # Extract English title, tag names, and end date presence, and convert dates to datetime
-    df['title'] = df['title'].apply(extract_english_title)
-    df['tags'] = df['tags'].apply(extract_tag_names)
-    df['has_end_date'] = df['endDate'].apply(has_end_date)
-    df['startDate'] = df['startDate'].apply(parse_date_to_datetime)
-    df['chapters'] = df['chapters'].fillna(-1)
-    df['volumes'] = df['volumes'].fillna(-1)
+    df["search_titles"] = df["title"].apply(extract_search_titles)
+    df["title"] = df["title"].apply(extract_english_title)
+    df["tags"] = df["tags"].apply(extract_tag_names)
+    # Tolerate data ingested before `staff` was added to the query, so an older
+    # raw partition still cleans successfully instead of raising KeyError.
+    df["authors"] = (
+        df["staff"].apply(extract_author_names)
+        if "staff" in df.columns
+        else [[] for _ in range(len(df))]
+    )
+    df["has_end_date"] = df["endDate"].apply(has_end_date)
+    df["startDate"] = df["startDate"].apply(parse_date_to_datetime)
+    df["chapters"] = df["chapters"].fillna(-1)
+    df["volumes"] = df["volumes"].fillna(-1)
 
     # clean descriptions if present
-    if 'description' in df.columns:
-        df['description'] = df['description'].apply(clean_description)
-    
+    if "description" in df.columns:
+        df["description"] = df["description"].apply(clean_description)
+
     # Remove adult content
-    df = df[df['isAdult'] != True]
-    df = df.drop(columns=['endDate', 'isAdult']) # drop endDate since we have has_end_date, and isAdult since we filtered it out
-    
+    df = df[~df["isAdult"].fillna(False).astype(bool)]
+    # endDate is superseded by has_end_date, isAdult has served its purpose, and
+    # staff is replaced by the filtered authors list.
+    df = df.drop(columns=["endDate", "isAdult", "staff"], errors="ignore")
+
     return df
 
-def clean_user_readdata(data: List[Dict]) -> pd.DataFrame:
+
+def clean_user_readdata(data: list[dict]) -> pd.DataFrame:
     """Clean user read data."""
     df = pd.DataFrame(data)
 

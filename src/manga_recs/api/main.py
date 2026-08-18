@@ -1,24 +1,79 @@
-import os
-from functools import lru_cache
+"""FastAPI service exposing manga recommendations."""
 
-from fastapi import FastAPI, HTTPException
+from __future__ import annotations
+
+import logging
+import os
+import time
+import uuid
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from manga_recs.api.schemas import RecommendationResponse, RecommendationRequest
-import joblib
-import pandas as pd
-from rapidfuzz import fuzz, process
-from manga_recs.common.constants import (
-    CLEANED_MANGA_METADATA_PARQUET,
-    CLEANED_STATUS,
-    COSINE_SIM_FILENAME,
-    MODELS_STATUS,
+from fastapi.staticfiles import StaticFiles
+
+from manga_recs.api.schemas import (
+    HealthResponse,
+    RecommendationRequest,
+    RecommendationResponse,
 )
 from manga_recs.common.settings import settings
-from manga_recs.data.load import s3_load
+from manga_recs.observability import (
+    METRICS_CONTENT_TYPE,
+    configure_logging,
+    configure_tracing,
+    metrics,
+    render_metrics,
+    request_id_var,
+    span,
+)
+from manga_recs.serving.recommender import TitleNotFoundError, get_recommender
 
-app = FastAPI(title="Manga Recommendation API")
+configure_logging()
+configure_tracing()
+logger = logging.getLogger(__name__)
 
-# Allowed origins are comma-separated; default to "*" for easy local/dev use.
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Warm the artifact cache so the first real request is fast, but never fail
+    # startup on it: the endpoint loads lazily and the platform health check
+    # should be able to report an unhealthy-but-running service.
+    with span("startup.preload_artifacts"):
+        try:
+            recommender = get_recommender()
+        except Exception as exc:  # noqa: BLE001 - startup must not crash on storage issues
+            metrics.set_model_unavailable()
+            logger.warning(
+                "Could not preload model artifacts at startup: %s",
+                exc,
+                extra={"event": "artifacts.preload_failed"},
+            )
+        else:
+            metrics.set_model_info(
+                items=int(recommender.sim_matrix.shape[0]),
+                artifact_source=recommender.source,
+                partition=(recommender.manifest or {}).get("partition"),
+            )
+            logger.info(
+                "Model ready",
+                extra={
+                    "event": "artifacts.loaded",
+                    "artifact_source": recommender.source,
+                    "items": int(recommender.sim_matrix.shape[0]),
+                },
+            )
+    yield
+
+
+app = FastAPI(
+    title="Manga Recommendation API",
+    description="Content-based manga recommendations from AniList metadata.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Comma-separated allowlist; defaults to "*" so local development just works.
 _cors_origins = os.getenv("MANGA_RECS_CORS_ORIGINS", "*")
 app.add_middleware(
     CORSMiddleware,
@@ -28,71 +83,153 @@ app.add_middleware(
 )
 
 
-@lru_cache(maxsize=1)
-def load_artifacts():
-    """Lazily download and cache the similarity matrix and metadata."""
-    sim_path = s3_load(COSINE_SIM_FILENAME, bucket=settings.s3.bucket, status=MODELS_STATUS)
-    sim_matrix = joblib.load(sim_path)
-    metadata_path = s3_load(CLEANED_MANGA_METADATA_PARQUET, bucket=settings.s3.bucket, status=CLEANED_STATUS)
-    metadata = pd.read_parquet(metadata_path)
-    return sim_matrix, metadata
+def _route_template(request: Request) -> str:
+    """Return the matched route pattern, not the raw path.
+
+    Metric labels must come from a bounded set. Using request.url.path would let
+    any caller mint new label values by hitting arbitrary URLs, which is how a
+    metrics backend gets flooded with useless series.
+    """
+    route = request.scope.get("route")
+    return getattr(route, "path", None) or "unmatched"
 
 
-@app.on_event("startup")
-def _warm_cache():
-    # Best-effort: preload artifacts so the first request is fast, but don't
-    # block startup if S3 is temporarily unreachable (the endpoint loads lazily).
+@app.middleware("http")
+async def observe_requests(request: Request, call_next):
+    # Honour an inbound correlation id so a request can be traced across a proxy
+    # or a client that already has one, and mint one otherwise.
+    incoming = request.headers.get("X-Request-ID")
+    request_id = incoming or uuid.uuid4().hex[:16]
+    token = request_id_var.set(request_id)
+
+    started = time.perf_counter()
     try:
-        load_artifacts()
-    except Exception as exc:  # noqa: BLE001
-        print(f"Warning: could not preload artifacts at startup: {exc}")
+        # Everything stays inside the span, including the summary log, so that
+        # line carries the trace and span ids and is joinable to the trace. Logged
+        # after the span closed, it would have neither.
+        with span(
+            f"{request.method} {request.url.path}",
+            **{
+                "http.request.method": request.method,
+                "url.path": request.url.path,
+                "manga_recs.request_id": request_id,
+            },
+        ) as current:
+            response = await call_next(request)
+            elapsed = time.perf_counter() - started
+
+            response.headers["X-Response-Time-ms"] = f"{elapsed * 1000:.1f}"
+            # Echo the id so a user reporting a slow request can quote something
+            # findable in the logs.
+            response.headers["X-Request-ID"] = request_id
+
+            route = _route_template(request)
+            if current is not None:
+                current.set_attribute("http.response.status_code", response.status_code)
+                current.set_attribute("http.route", route)
+
+            metrics.record_request(request.method, route, response.status_code, elapsed)
+
+            # Static asset requests would otherwise drown the log during a demo.
+            if not route.startswith("/_next") and route != "unmatched":
+                logger.info(
+                    "request completed",
+                    extra={
+                        "event": "http.request",
+                        "http_method": request.method,
+                        "http_route": route,
+                        "http_path": request.url.path,
+                        "http_status": response.status_code,
+                        "duration_ms": round(elapsed * 1000, 2),
+                    },
+                )
+            return response
+    finally:
+        request_id_var.reset(token)
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics() -> Response:
+    """Prometheus scrape endpoint."""
+    return Response(content=render_metrics(), media_type=METRICS_CONTENT_TYPE)
+
+
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    """Liveness probe that also reports whether the model is resident."""
+    try:
+        recommender = get_recommender()
+    except Exception as exc:  # noqa: BLE001 - report unhealthy rather than raising
+        return HealthResponse(status="degraded", model_loaded=False, detail=str(exc))
+    return HealthResponse(
+        status="ok",
+        model_loaded=True,
+        items=int(recommender.sim_matrix.shape[0]),
+        artifact_source=recommender.source,
+        model_partition=(recommender.manifest or {}).get("partition"),
+    )
 
 
 @app.post("/recommendations/", response_model=RecommendationResponse)
-def recommend(request: RecommendationRequest):
-    title = request.title
-    top_n = request.top_n
+def recommend(request: RecommendationRequest) -> RecommendationResponse:
+    try:
+        recommender = get_recommender()
+    except Exception as exc:  # noqa: BLE001
+        metrics.set_model_unavailable()
+        logger.error(
+            "Model unavailable",
+            extra={"event": "model.unavailable", "error": str(exc)},
+        )
+        raise HTTPException(status_code=503, detail="Model artifacts unavailable.") from exc
 
-    SIM_MATRIX, METADATA = load_artifacts()
+    started = time.perf_counter()
+    try:
+        match, recommendations = recommender.recommend(request.title, request.top_n)
+    except TitleNotFoundError as exc:
+        metrics.record_title_not_found()
+        # Logged at info, not error: an unmatchable query is a normal outcome,
+        # and paging on it would be noise. It is still worth counting, because a
+        # rising miss rate is a catalogue-coverage signal.
+        logger.info(
+            "title not found",
+            extra={"event": "recommendation.miss", "query": request.title},
+        )
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    # Find manga ID from title using fuzzy matching
-    titles = METADATA['title'].tolist()
-    best_match = process.extractOne(title, titles, scorer=fuzz.ratio)
-    if best_match is None or best_match[1] < settings.api.fuzzy_match_threshold:
-        raise HTTPException(status_code=404, detail=f"Title '{title}' not found in metadata.")
-    matched_title = best_match[0]
+    elapsed = time.perf_counter() - started
+    metrics.observe_recommendation(elapsed)
+    metrics.observe_match_score(match.score)
 
-    matched = METADATA[METADATA['title'].str.lower() == matched_title.lower()]
-    if matched.empty:
-        raise HTTPException(status_code=404, detail=f"Title '{title}' not found in metadata.")
-    
-    manga_id = matched['id'].iloc[0]
-    
-    if manga_id not in SIM_MATRIX.index:
-        raise HTTPException(status_code=404, detail=f"Manga ID {manga_id} (from title '{title}') not found in similarity matrix.")
+    logger.info(
+        "recommendations served",
+        extra={
+            "event": "recommendation.hit",
+            "query": request.title,
+            "matched_title": match.title,
+            "match_score": match.score,
+            "returned": len(recommendations),
+            "duration_ms": round(elapsed * 1000, 2),
+        },
+    )
 
-    # Get similarity scores for this manga
-    similarities = SIM_MATRIX.loc[manga_id]
+    return RecommendationResponse(
+        title=request.title,
+        matched_title=match.title,
+        match_score=match.score,
+        recommendations=recommendations,
+    )
 
-    # Get top-N
-    top_similarities = similarities.sort_values(ascending=False).head(top_n)
 
-    # Get metadata for recommended manga
-    recs = METADATA[METADATA['id'].isin(top_similarities.index)][['id', 'title', 'description', 'tags']]
-
-    # Merge similarity scores
-    recs = recs.set_index('id').join(top_similarities.rename("similarity"))
-    recs['similarity'] = recs['similarity'].round(2)
-
-    # Convert dtypes for JSON serialization
-    recs['similarity'] = recs['similarity'].apply(float)
-    recs['tags'] = recs['tags'].apply(lambda x: list(x) if isinstance(x, (list, pd.Series)) else str(x))
-
-    recs = recs.sort_values(by="similarity", ascending=False)
-    
-    return RecommendationResponse(title=title, recommendations=recs.reset_index().to_dict(orient='records'))
+# Mounted last on purpose: Starlette matches routes in registration order, so
+# every API route above still wins over this catch-all. Serving the UI from the
+# same origin as the API is what collapses the deployment to one container and
+# removes CORS from the picture entirely.
+if settings.serving.static_dir is not None:
+    app.mount(
+        "/",
+        StaticFiles(directory=settings.serving.static_dir, html=True),
+        name="ui",
+    )
+    logger.info("Serving frontend from %s", settings.serving.static_dir)
+else:
+    logger.info("No built frontend found; running API-only.")

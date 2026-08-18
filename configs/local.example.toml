@@ -1,11 +1,27 @@
 # Copy to configs/local.toml and customize for your machine/environment.
+#
+# Credentials never belong in here. Put them in .env (see .env.example) or the
+# ambient AWS credential chain; this file is only for non-secret settings.
 
 [paths]
 # data_dir = "data"
 # artifacts_dir = "artifacts"
 
-[s3]
+[storage]
+# --- AWS S3 ---
 # bucket = "manga-recs-dev"
+# endpoint_url = ""
+# region = "us-east-1"
+#
+# --- Cloudflare R2 ---
+# bucket = "manga-recs"
+# endpoint_url = "https://<account-id>.r2.cloudflarestorage.com"
+# region = "auto"
+#
+# --- MinIO (docker compose up minio) ---
+# bucket = "manga-recs"
+# endpoint_url = "http://localhost:9000"
+# region = "us-east-1"
 
 [api]
 # graphql_url = "https://graphql.anilist.co"
@@ -24,3 +40,9 @@
 
 [recommendation]
 # default_top_n = 5
+
+[evaluation]
+# min_user_interactions = 5
+# test_fraction = 20
+# k = 10
+# random_seed = 42

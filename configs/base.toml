@@ -2,23 +2,67 @@
 data_dir = "data"
 artifacts_dir = "artifacts"
 
-[s3]
+# Any S3-compatible object store. Leave endpoint_url empty for AWS S3; set it to
+# a Cloudflare R2 or MinIO endpoint to run the same code against those instead.
+[storage]
 bucket = "manga-recs"
+endpoint_url = ""
+region = "auto"
 
 [api]
 graphql_url = "https://graphql.anilist.co"
-fuzzy_match_threshold = 70
+# Tuned against the real title index: genuine queries (including typos and
+# romaji) score >= 69, while junk queries top out around 60.
+fuzzy_match_threshold = 65
 
 [ingestion]
-rate_limit = 10
+# Requests per minute. AniList publishes 90/min but frequently serves a
+# degraded 30/min, and the client backs off on 429 regardless.
+rate_limit = 30
 popularity_min = 10000
 user_start_id = 1001
 user_end_id = 1500
-user_max_pages = 200
+# Caps requests spent on any single user. Early AniList accounts have libraries
+# in the thousands, and without a low cap one power user can dominate an entire
+# ingestion run. Ten pages is ~500 titles, far more than evaluation needs.
+user_max_pages = 10
 user_per_page = 50
+# Attempts per user request. Low on purpose: AniList serves persistent 500s for
+# some accounts, and a long backoff spends minutes proving what two tries showed.
+user_max_retries = 3
+
+[features]
+# Creators are ingested from the AniList `staff` connection, filtered to primary
+# authoring roles, and one-hot encoded into the similarity matrix.
+#
+# Honest caveat, measured rather than assumed: permuting the author-to-title
+# mapping produces metrics statistically indistinguishable from the real
+# assignment, so at this catalogue size the author columns are not demonstrably
+# contributing creative signal. Kept on because the encoding is correct and the
+# metrics are no worse; run scripts/author_ablation.py to reproduce.
+include_authors = true
+# Minimum titles an author must appear on to earn a feature column. 2 keeps the
+# matrix at 566 columns instead of 1629 for no measurable loss.
+author_min_titles = 2
 
 [mlflow]
 experiment_name = "manga_cosine_recommender"
 
 [recommendation]
 default_top_n = 5
+
+[serving]
+# Where the API reads its similarity matrix and metadata from.
+#   "auto"         - prefer the baked-in bundle, fall back to the object store
+#   "bundle"       - bundle only; no network and no credentials required
+#   "object_store" - always fetch the newest published partition
+# The whole serving path needs ~8 MB of artifacts, so a deployed image can carry
+# them and run with no bucket at all. The pipeline still uses the object store.
+artifact_source = "auto"
+bundle_dir = "artifacts/serving"
+
+[evaluation]
+min_user_interactions = 5
+test_fraction = 20
+k = 10
+random_seed = 42

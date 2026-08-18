@@ -1,5 +1,6 @@
 .git
 .gitignore
+.github
 .venv
 venv
 env
@@ -9,16 +10,29 @@ __pycache__
 .pytest_cache
 .ruff_cache
 .mypy_cache
+.coverage
+coverage.xml
+htmlcov
 
-# Frontend is deployed separately (Vercel)
-frontend
+# Frontend: the sources are needed by the build stage, but never the local
+# install or a previous build's output.
+frontend/node_modules
+frontend/.next
+frontend/out
 
-# Local-only / generated
+# Local-only / generated. artifacts/serving is deliberately NOT excluded: it
+# holds the baked-in model and metadata the image serves from.
 configs/local.toml
 .env
 data/
-artifacts/
+artifacts/features
+artifacts/models
 mlruns/
 mlflow.db
 notebooks/
-*.md
+tests/
+airflow/
+deploy/
+
+DEPLOYMENT.md
+CONTRIBUTING.md

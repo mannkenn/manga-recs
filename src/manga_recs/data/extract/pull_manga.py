@@ -1,47 +1,51 @@
-from typing import List, Dict
+import logging
 
-def fetch_manga_data(client, query, rate_limiter, avg_score: int = 70, popularity: int = 20000, per_page: int = 50) -> List[Dict]:
-    '''
-    Fetches manga metadata from all pages based on arguments
+logger = logging.getLogger(__name__)
+
+
+def fetch_manga_data(
+    client,
+    query,
+    rate_limiter,
+    avg_score: int = 70,
+    popularity: int = 20000,
+    per_page: int = 50,
+) -> list[dict]:
+    """Fetch every page of manga metadata matching the score/popularity floor.
 
     Args:
         client: GraphQL API client
-        query (str): GraphQL query string
-        avg_score (int): Minimum avg score of manga
-        popularity (int): Minimum popularity of manga
-        per_page (int): Results per page
+        query: GraphQL query string
+        rate_limiter: throttle applied before each request
+        avg_score: minimum average score
+        popularity: minimum popularity
+        per_page: results per page
 
     Returns:
-        List[Dict]: Aggregated mediaList entries across all pages
-    '''
-
+        Aggregated media entries across all pages.
+    """
     page = 1
-    all_manga = []
+    all_manga: list[dict] = []
 
-    # Go through all pages
     while True:
         rate_limiter.wait()
 
-        # input variables 
         variables = {
-            'page': page,
-            'perPage': per_page,
-            'type': 'MANGA',
-            'averageScoreGreater': avg_score,
-            'popularityGreater': popularity
+            "page": page,
+            "perPage": per_page,
+            "type": "MANGA",
+            "averageScoreGreater": avg_score,
+            "popularityGreater": popularity,
         }
         result = client.query(query, variables)
-        
+
         page_data = result["Page"]
         all_manga.extend(page_data["media"])
+        logger.info("Fetched manga page %d (%d records so far)", page, len(all_manga))
 
         if not page_data["pageInfo"]["hasNextPage"]:
             break
-        print(f"Fetched page {page}")
         page += 1
-        
-    print(f"Finished Fetching {page} pages of manga data.")
+
+    logger.info("Finished fetching %d manga records across %d pages", len(all_manga), page)
     return all_manga
-
-
-

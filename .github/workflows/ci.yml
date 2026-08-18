@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install tooling
+        run: pip install ruff
+
+      - name: Ruff (lint)
+        run: ruff check --output-format=github .
+
+      - name: Ruff (format)
+        run: ruff format --check .
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      # The same compose file developers use locally, so the object store code
+      # path under test is the real boto3 one rather than a mock.
+      - name: Start MinIO
+        run: |
+          docker compose up -d minio minio-init
+          timeout 60 sh -c 'until curl -sf http://localhost:9000/minio/health/live; do sleep 2; done'
+
+      - name: Run tests
+        env:
+          AWS_ACCESS_KEY_ID: minioadmin
+          AWS_SECRET_ACCESS_KEY: minioadmin
+          AWS_DEFAULT_REGION: us-east-1
+          MANGA_RECS_S3_ENDPOINT_URL: http://localhost:9000
+          MANGA_RECS_S3_BUCKET: manga-recs-ci
+        run: pytest --cov=manga_recs --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -t manga-recs-api:ci .
+
+      # A built image that cannot boot is not a passing build.
+      - name: Verify the container serves /health
+        run: |
+          docker run -d --name api -p 8000:8000 \
+            -e MANGA_RECS_S3_BUCKET=unreachable-on-purpose \
+            manga-recs-api:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /tmp/health.json; then
+              echo "Health response: $(cat /tmp/health.json)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API never became reachable"
+          docker logs api
+          exit 1
+
+      - name: Container logs
+        if: failure()
+        run: docker logs api || true
