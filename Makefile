@@ -2,11 +2,12 @@ PYTHON ?= python
 PIP ?= $(PYTHON) -m pip
 PKG ?= manga_recs
 
-.PHONY: help venv install install-dev clean \
+.PHONY: help venv install install-pipeline install-dev clean \
 	minio minio-down airflow airflow-down \
 	lint format test test-unit cov \
 	run-ingestion run-clean run-features run-pipeline run-train run-evaluate run-api \
-	status docker-build docker-run
+	status bundle frontend-build \
+	docker-build docker-run docker-run-readonly docker-smoke
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-18s %s\n", $$1, $$2}'
@@ -14,10 +15,13 @@ help: ## Show available commands
 venv: ## Create virtual environment at .venv
 	$(PYTHON) -m venv .venv
 
-install: ## Install runtime dependencies
+install: ## Install serving dependencies only (what the deployed image gets)
 	$(PIP) install -e .
 
-install-dev: ## Install project plus dev tooling
+install-pipeline: ## Install serving plus pipeline dependencies (boto3, mlflow, sklearn)
+	$(PIP) install -e ".[pipeline]"
+
+install-dev: ## Install everything plus test and lint tooling
 	$(PIP) install -e ".[dev]"
 
 clean: ## Remove temporary files and build artifacts
@@ -87,10 +91,27 @@ run-api: ## Start FastAPI server locally
 status: ## Show the configured storage backend and its partitions
 	$(PYTHON) -m $(PKG).cli status
 
+# --- deployment ---------------------------------------------------------
+
+bundle: ## Copy published serving artifacts locally so the image can bake them in
+	$(PYTHON) -m $(PKG).cli bundle
+
+frontend-build: ## Build the static frontend into frontend/out
+	cd frontend && npm ci && npm run build
+
 # --- container ----------------------------------------------------------
 
-docker-build: ## Build the API container image
-	docker build -t manga-recs-api .
+IMAGE ?= manga-recs
+PORT ?= 7860
 
-docker-run: ## Run the API container against local MinIO
-	docker compose --profile api up --build api
+docker-build: ## Build the single-container demo image (API + UI + artifacts)
+	docker build -t $(IMAGE) .
+
+docker-run: ## Run the demo image on $(PORT)
+	docker run --rm -p $(PORT):7860 $(IMAGE)
+
+docker-run-readonly: ## Run exactly as Hugging Face Spaces does: read-only FS, /tmp only
+	docker run --rm -p $(PORT):7860 --read-only --tmpfs /tmp $(IMAGE)
+
+docker-smoke: ## Build, boot read-only, and assert /health and /recommendations/ work
+	./scripts/smoke_test.sh $(IMAGE) $(PORT)

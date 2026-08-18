@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 
 
 def _configure_logging(verbose: bool) -> None:
@@ -46,9 +47,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("status", help="Show the configured storage backend and its partitions")
 
+    bundle_parser = subparsers.add_parser(
+        "bundle", help="Copy serving artifacts locally so an image can bake them in"
+    )
+    bundle_parser.add_argument(
+        "--partition", help="Date partition to bundle (YYYY-MM-DD). Defaults to the latest."
+    )
+
     api_parser = subparsers.add_parser("api", help="Start FastAPI server")
     api_parser.add_argument("--host", default="127.0.0.1", help="Host for API server")
-    api_parser.add_argument("--port", type=int, default=8000, help="Port for API server")
+    api_parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("PORT", "8000")),
+        help="Port for API server (defaults to $PORT, else 8000)",
+    )
     api_parser.add_argument("--no-reload", action="store_true", help="Disable auto-reload")
 
     return parser
@@ -115,6 +128,13 @@ def main() -> None:
             print(f"{rank:>2}. {rec['title']}  ({rec['similarity']:.3f})")
     elif args.command == "status":
         _show_status()
+    elif args.command == "bundle":
+        from manga_recs.serving.artifacts import build_bundle
+
+        resolved = build_bundle(partition=partition)
+        print(f"\nBundled serving artifacts into {resolved.model_path.parent}")
+        for name, info in (resolved.manifest or {}).get("files", {}).items():
+            print(f"  {name:<40} {info['bytes'] / 1_000_000:.2f} MB")
     elif args.command == "api":
         _run_api(host=args.host, port=args.port, reload=not args.no_reload)
     else:

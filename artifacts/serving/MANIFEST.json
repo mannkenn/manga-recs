@@ -1,0 +1,13 @@
+{
+  "partition": "2026-08-07",
+  "built_at": "2026-08-18T16:02:16+00:00",
+  "source_backend": "local artifacts/ + data/cleaned (pre-bundle bootstrap)",
+  "files": {
+    "cleaned_manga_metadata.parquet": {
+      "bytes": 477701
+    },
+    "cosine_sim.pkl": {
+      "bytes": 7435124
+    }
+  }
+}

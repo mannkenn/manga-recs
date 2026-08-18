@@ -10,6 +10,7 @@ class Recommendation(BaseModel):
     id: int
     title: str
     description: str | None = None
+    genres: list[str] = []
     tags: list[str] = []
     similarity: float
 
@@ -25,3 +26,8 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     items: int | None = None
+    # Which artifact source answered, so a deployed instance can prove whether
+    # it is serving baked-in artifacts or something fetched at runtime.
+    artifact_source: str | None = None
+    model_partition: str | None = None
+    detail: str | None = None

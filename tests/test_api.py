@@ -33,10 +33,23 @@ class TestHealth:
         assert body["model_loaded"] is True
         assert body["items"] == 4
 
+    def test_reports_which_artifact_source_answered(self, client):
+        # A deployed instance has to be able to prove whether it is serving the
+        # artifacts baked into its image or something fetched at runtime.
+        assert client.get("/health").json()["artifact_source"] == "memory"
+
     def test_reports_degraded_when_model_missing(self, broken_client):
         response = broken_client.get("/health")
+        # Still 200: the process is alive and should say it is unhealthy rather
+        # than fail the platform's liveness probe and get restarted forever.
         assert response.status_code == 200
-        assert response.json() == {"status": "degraded", "model_loaded": False, "items": None}
+
+        body = response.json()
+        assert body["status"] == "degraded"
+        assert body["model_loaded"] is False
+        assert body["items"] is None
+        # The reason has to reach the operator, not just the logs.
+        assert "object store unreachable" in body["detail"]
 
 
 class TestRecommendations:

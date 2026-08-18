@@ -29,7 +29,13 @@ __pycache__/
 # mlops
 /mlflow.db
 /mlruns/
-/artifacts/
+# Ignore generated artifacts, but track artifacts/serving: those two files are
+# baked into the demo image so it serves with no bucket and no credentials.
+# ~7.9 MB total, well under any limit, and it makes the demo reproducible from a
+# clone. Excluding the directory's contents rather than the directory itself,
+# because git cannot re-include a path whose parent is excluded.
+/artifacts/*
+!/artifacts/serving/
 
 # experimentation
 /notebooks/

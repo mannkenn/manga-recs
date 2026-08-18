@@ -15,18 +15,23 @@ import joblib
 import pandas as pd
 from rapidfuzz import fuzz, process
 
-from manga_recs.common.constants import (
-    CLEANED_MANGA_METADATA_PARQUET,
-    CLEANED_STATUS,
-    COSINE_SIM_FILENAME,
-    MODELS_STATUS,
-)
 from manga_recs.common.settings import settings
-from manga_recs.data.load import get_file
+from manga_recs.serving import artifacts
 
 logger = logging.getLogger(__name__)
 
-RESULT_COLUMNS = ["id", "title", "description", "tags"]
+RESULT_COLUMNS = ["id", "title", "description", "genres", "tags"]
+
+# Parquet round-trips these as numpy arrays, which are not JSON serialisable.
+LIST_COLUMNS = ("genres", "tags")
+
+
+def _as_list(value) -> list[str]:
+    if value is None or isinstance(value, str):
+        return []
+    if hasattr(value, "__iter__"):
+        return [str(item) for item in value]
+    return []
 
 
 class TitleNotFoundError(LookupError):
@@ -48,12 +53,18 @@ class Recommender:
         sim_matrix: pd.DataFrame,
         metadata: pd.DataFrame,
         fuzzy_threshold: int | None = None,
+        source: str = "memory",
+        manifest: dict | None = None,
     ) -> None:
         self.sim_matrix = sim_matrix
         self.metadata = metadata
         self.fuzzy_threshold = (
             settings.api.fuzzy_match_threshold if fuzzy_threshold is None else fuzzy_threshold
         )
+        # Where this model came from, surfaced on /health so a deployed instance
+        # can say whether it is serving baked-in or freshly fetched artifacts.
+        self.source = source
+        self.manifest = manifest
         self._search_titles, self._title_rows = self._build_search_index(metadata)
 
     @staticmethod
@@ -80,20 +91,27 @@ class Recommender:
         return search_titles, title_rows
 
     @classmethod
-    def from_store(cls, partition: str | None = None) -> Recommender:
-        """Load the newest published model and metadata from the object store."""
-        model_path = get_file(COSINE_SIM_FILENAME, status=MODELS_STATUS, partition=partition)
-        metadata_path = get_file(
-            CLEANED_MANGA_METADATA_PARQUET, status=CLEANED_STATUS, partition=partition
-        )
-        sim_matrix = joblib.load(model_path)
-        metadata = pd.read_parquet(metadata_path)
+    def load(cls, source: str | None = None, partition: str | None = None) -> Recommender:
+        """Load a recommender from wherever the configured artifact source points.
+
+        Defaults to the baked-in bundle when one is present, so a deployed
+        container serves without credentials or network access.
+        """
+        resolved = artifacts.resolve(source=source, partition=partition)
+        sim_matrix = joblib.load(resolved.model_path)
+        metadata = pd.read_parquet(resolved.metadata_path)
         logger.info(
-            "Loaded recommender: %d items in similarity matrix, %d metadata rows",
+            "Loaded recommender from %s: %d items in similarity matrix, %d metadata rows",
+            resolved.source,
             sim_matrix.shape[0],
             len(metadata),
         )
-        return cls(sim_matrix, metadata)
+        return cls(sim_matrix, metadata, source=resolved.source, manifest=resolved.manifest)
+
+    @classmethod
+    def from_store(cls, partition: str | None = None) -> Recommender:
+        """Load the newest published model and metadata from the object store."""
+        return cls.load(source="object_store", partition=partition)
 
     def match_title(self, title: str) -> TitleMatch:
         """Resolve a free-text title to a manga id using fuzzy matching.
@@ -134,14 +152,13 @@ class Recommender:
             .head(top_n)
         )
 
-        recs = self.metadata[self.metadata["id"].isin(similarities.index)][RESULT_COLUMNS]
+        available = [col for col in RESULT_COLUMNS if col in self.metadata.columns]
+        recs = self.metadata[self.metadata["id"].isin(similarities.index)][available]
         recs = recs.set_index("id").join(similarities.rename("similarity"))
         recs["similarity"] = recs["similarity"].astype(float).round(4)
-        recs["tags"] = recs["tags"].apply(
-            lambda value: (
-                list(value) if hasattr(value, "__iter__") and not isinstance(value, str) else []
-            )
-        )
+        for column in LIST_COLUMNS:
+            if column in recs.columns:
+                recs[column] = recs[column].apply(_as_list)
         recs = recs.sort_values(by="similarity", ascending=False)
 
         return match, recs.reset_index().to_dict(orient="records")
@@ -150,7 +167,7 @@ class Recommender:
 @lru_cache(maxsize=1)
 def get_recommender() -> Recommender:
     """Process-wide cached recommender."""
-    return Recommender.from_store()
+    return Recommender.load()
 
 
 def get_top_n_recommendations_by_title(title: str, top_n: int = 5) -> list[dict]:

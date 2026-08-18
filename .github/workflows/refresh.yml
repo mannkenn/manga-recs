@@ -35,7 +35,9 @@ jobs:
           cache: pip
 
       - name: Install project
-        run: pip install -e .
+        # The pipeline extra carries boto3, mlflow, and scikit-learn, which the
+        # serving image deliberately does not.
+        run: pip install -e ".[pipeline]"
 
       - name: Resolve partition
         id: partition

@@ -1,5 +1,7 @@
 node_modules
 .next
+# Static export output. Built by the Docker frontend stage, never committed.
+out
 .env.local
 npm-debug.log
 .DS_Store

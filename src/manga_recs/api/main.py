@@ -9,12 +9,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from manga_recs.api.schemas import (
     HealthResponse,
     RecommendationRequest,
     RecommendationResponse,
 )
+from manga_recs.common.settings import settings
 from manga_recs.serving.recommender import TitleNotFoundError, get_recommender
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -71,12 +73,14 @@ def health() -> HealthResponse:
     """Liveness probe that also reports whether the model is resident."""
     try:
         recommender = get_recommender()
-    except Exception:  # noqa: BLE001 - report unhealthy rather than raising
-        return HealthResponse(status="degraded", model_loaded=False)
+    except Exception as exc:  # noqa: BLE001 - report unhealthy rather than raising
+        return HealthResponse(status="degraded", model_loaded=False, detail=str(exc))
     return HealthResponse(
         status="ok",
         model_loaded=True,
         items=int(recommender.sim_matrix.shape[0]),
+        artifact_source=recommender.source,
+        model_partition=(recommender.manifest or {}).get("partition"),
     )
 
 
@@ -99,3 +103,18 @@ def recommend(request: RecommendationRequest) -> RecommendationResponse:
         match_score=match.score,
         recommendations=recommendations,
     )
+
+
+# Mounted last on purpose: Starlette matches routes in registration order, so
+# every API route above still wins over this catch-all. Serving the UI from the
+# same origin as the API is what collapses the deployment to one container and
+# removes CORS from the picture entirely.
+if settings.serving.static_dir is not None:
+    app.mount(
+        "/",
+        StaticFiles(directory=settings.serving.static_dir, html=True),
+        name="ui",
+    )
+    logger.info("Serving frontend from %s", settings.serving.static_dir)
+else:
+    logger.info("No built frontend found; running API-only.")

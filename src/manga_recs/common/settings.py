@@ -66,6 +66,30 @@ class RecommendationSettings:
 
 
 @dataclass(frozen=True)
+class ServingSettings:
+    """How the API resolves the artifacts it serves.
+
+    The serving path needs only a similarity matrix and a metadata table, which
+    together are small enough to ship inside the image. ``artifact_source``
+    decides where they come from:
+
+    ``bundle``
+        Read the baked-in files only. No network, no credentials.
+    ``object_store``
+        Always fetch the newest published partition.
+    ``auto``
+        Prefer the bundle when it is present, otherwise fall back to the store.
+
+    ``auto`` is the default so a deployed image serves offline while a developer
+    with a configured bucket still picks up fresh models automatically.
+    """
+
+    artifact_source: str
+    bundle_dir: Path
+    static_dir: Path | None
+
+
+@dataclass(frozen=True)
 class EvaluationSettings:
     min_user_interactions: int
     test_fraction: int
@@ -82,6 +106,7 @@ class Settings:
     mlflow: MlflowSettings
     recommendation: RecommendationSettings
     evaluation: EvaluationSettings
+    serving: ServingSettings
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -127,6 +152,26 @@ def _config_root() -> Path:
     return Path.cwd()
 
 
+def _resolve_static_dir(root: Path, configured: str | None) -> Path | None:
+    """Locate the built frontend, or return None to run API-only.
+
+    Checked in order: an explicit setting, then the Next export output, then the
+    directory the container copies the build into. Serving the UI is optional so
+    the API still boots when no frontend has been built.
+    """
+    explicit = os.getenv("MANGA_RECS_STATIC_DIR") or configured
+    if explicit:
+        candidate = Path(explicit)
+        candidate = candidate if candidate.is_absolute() else root / candidate
+        return candidate if (candidate / "index.html").exists() else None
+
+    for relative in ("frontend/out", "static"):
+        candidate = root / relative
+        if (candidate / "index.html").exists():
+            return candidate
+    return None
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     base_path = _config_root() / "configs" / "base.toml"
@@ -154,6 +199,7 @@ def get_settings() -> Settings:
     mlflow = config.get("mlflow", {})
     recommendation = config.get("recommendation", {})
     evaluation = config.get("evaluation", {})
+    serving = config.get("serving", {})
 
     endpoint_url = (
         _first_env(
@@ -212,6 +258,15 @@ def get_settings() -> Settings:
             test_fraction=int(evaluation.get("test_fraction", 20)),
             k=int(evaluation.get("k", 10)),
             random_seed=int(evaluation.get("random_seed", 42)),
+        ),
+        serving=ServingSettings(
+            artifact_source=(
+                os.getenv("MANGA_RECS_ARTIFACT_SOURCE") or serving.get("artifact_source", "auto")
+            )
+            .strip()
+            .lower(),
+            bundle_dir=root / Path(serving.get("bundle_dir", "artifacts/serving")),
+            static_dir=_resolve_static_dir(root, serving.get("static_dir")),
         ),
     )
 

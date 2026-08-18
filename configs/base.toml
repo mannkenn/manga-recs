@@ -37,6 +37,16 @@ experiment_name = "manga_cosine_recommender"
 [recommendation]
 default_top_n = 5
 
+[serving]
+# Where the API reads its similarity matrix and metadata from.
+#   "auto"         - prefer the baked-in bundle, fall back to the object store
+#   "bundle"       - bundle only; no network and no credentials required
+#   "object_store" - always fetch the newest published partition
+# The whole serving path needs ~8 MB of artifacts, so a deployed image can carry
+# them and run with no bucket at all. The pipeline still uses the object store.
+artifact_source = "auto"
+bundle_dir = "artifacts/serving"
+
 [evaluation]
 min_user_interactions = 5
 test_fraction = 20
