@@ -1,13 +1,35 @@
-import requests, time, json
+import json
+import time
+from typing import Any
+
 import pandas as pd
-from typing import Dict, Any
+import requests
+
+
+class GraphQLQueryError(RuntimeError):
+    """A GraphQL response carried errors instead of data.
+
+    Kept distinct from ``requests.HTTPError`` so callers can decide for
+    themselves whether a given resource is optional and skippable.
+    """
+
+    def __init__(self, errors: Any):
+        self.errors = errors
+        super().__init__(str(errors))
+
 
 class MangaGraphQLClient:
-    '''
-    GraphQL API Client
-    '''
-    
-    def __init__(self, url: str, timeout: int = 10):
+    """GraphQL client with retry handling for AniList.
+
+    Retries three distinct failure modes: retryable HTTP statuses, GraphQL-level
+    errors, and transport failures such as read timeouts. The last of these
+    matters most in practice — AniList times out often enough that treating it
+    as fatal makes any long ingestion run a coin flip.
+    """
+
+    RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+    def __init__(self, url: str, timeout: int = 30):
         self.url = url.rstrip("/")
         self.session = requests.Session()
         self.timeout = timeout
@@ -32,33 +54,41 @@ class MangaGraphQLClient:
 
         return float(min(2 ** attempt, 60))
         
-    def query(self, query: str, variables: dict | None = None, max_retries: int = 8) -> Dict:
-        '''
-        Construct GraphQL query with variables
+    def query(self, query: str, variables: dict | None = None, max_retries: int = 8) -> dict:
+        """Execute a GraphQL query, retrying transient failures.
 
         Args:
-            query (str): GraphQL query
-            variables (dict, optional): dynamic values to queries
+            query: GraphQL query string
+            variables: dynamic values for the query
+            max_retries: total attempts before giving up
 
         Returns:
-            Response data as dictionary  
-        '''
+            The ``data`` object from the response.
+
+        Raises:
+            GraphQLQueryError: the response carried GraphQL errors.
+            requests.HTTPError: a non-retryable HTTP status.
+            requests.RequestException: the transport kept failing.
+        """
 
         payload = {"query": query}
         if variables:
             payload["variables"] = variables
 
-        retryable_statuses = {429, 500, 502, 503, 504}
-        last_exception = None
+        last_exception: Exception | None = None
 
         for attempt in range(1, max_retries + 1):
-            response = self.session.post(
-                self.url,
-                json=payload,
-                timeout=self.timeout
-            )
+            try:
+                response = self.session.post(self.url, json=payload, timeout=self.timeout)
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                # Transport-level failure: no response to inspect, so back off blindly.
+                last_exception = exc
+                if attempt < max_retries:
+                    time.sleep(min(2**attempt, 30))
+                    continue
+                raise
 
-            if response.status_code in retryable_statuses and attempt < max_retries:
+            if response.status_code in self.RETRYABLE_STATUSES and attempt < max_retries:
                 time.sleep(self._retry_delay(response, attempt))
                 continue
 
@@ -80,7 +110,7 @@ class MangaGraphQLClient:
                 ) from exc
 
             if "errors" in result:
-                last_exception = Exception(result["errors"])
+                last_exception = GraphQLQueryError(result["errors"])
                 error_blob = json.dumps(result["errors"]).lower()
                 if attempt < max_retries:
                     if "too many requests" in error_blob or '"status": 429' in error_blob:
@@ -109,7 +139,7 @@ class RateLimiter:
 
 def load_json(filepath: str) -> Any:
     """Load JSON file safely (UTF-8, Windows compatible)."""
-    with open(filepath, "r", encoding="utf-8-sig") as f:
+    with open(filepath, encoding="utf-8-sig") as f:
         return json.load(f)
 
 
