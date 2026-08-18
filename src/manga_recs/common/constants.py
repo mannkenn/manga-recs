@@ -2,6 +2,7 @@ RAW_STATUS = "raw"
 CLEANED_STATUS = "cleaned"
 FEATURES_STATUS = "features"
 MODELS_STATUS = "models"
+METRICS_STATUS = "metrics"
 
 MANGA_METADATA_JSON = "manga_metadata.json"
 USER_READDATA_JSON = "user_readdata.json"
@@ -13,3 +14,5 @@ MANGA_FEATURES_PARQUET = "manga_features.parquet"
 USER_FEATURES_PARQUET = "user_features.parquet"
 
 COSINE_SIM_FILENAME = "cosine_sim.pkl"
+
+EVALUATION_METRICS_JSON = "evaluation_metrics.json"
