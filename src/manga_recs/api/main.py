@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Match
 
 from manga_recs.api.ratelimit import SlidingWindowLimiter, client_key
 from manga_recs.api.schemas import (
@@ -101,9 +102,23 @@ def _route_template(request: Request) -> str:
     Metric labels must come from a bounded set. Using request.url.path would let
     any caller mint new label values by hitting arbitrary URLs, which is how a
     metrics backend gets flooded with useless series.
+
+    Starlette only records the route once a request reaches the router, so a
+    request rejected in middleware has none. Matching explicitly in that case
+    keeps rate-limited traffic attributed to the endpoint it was aimed at --
+    otherwise every 429 lands in an "unmatched" bucket, which hides the one
+    thing the metric is for.
     """
     route = request.scope.get("route")
-    return getattr(route, "path", None) or "unmatched"
+    path = getattr(route, "path", None)
+    if path:
+        return path
+
+    for candidate in request.app.router.routes:
+        match, _ = candidate.matches(request.scope)
+        if match is not Match.NONE:
+            return getattr(candidate, "path", None) or "unmatched"
+    return "unmatched"
 
 
 def _rejection(request: Request) -> Response | None:

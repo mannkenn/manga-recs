@@ -142,11 +142,18 @@ def configure_logging(level: str | None = None, json_output: bool | None = None)
     root.setLevel(level)
 
     # uvicorn installs its own handlers; let them propagate to ours instead so
-    # access logs come out in the same format as everything else.
+    # its lines come out in the same format as everything else.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers = []
         uvicorn_logger.propagate = True
+
+    # uvicorn's access log is a strictly worse duplicate of the line the
+    # middleware emits: same request, but no request id, no trace id, no
+    # duration, and the method and status interpolated into a string rather than
+    # available as fields. Keeping both doubles log volume and gives a text
+    # search two hits per request, one of which is a dead end.
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
     for noisy in ("botocore", "boto3", "urllib3", "s3transfer"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

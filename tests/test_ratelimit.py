@@ -188,6 +188,16 @@ class TestEndpointEnforcement:
         assert "manga_recs_rate_limited_total" in body
         assert 'status="429"' in body
 
+    def test_throttled_requests_keep_their_route_label(self, client):
+        """Rejection happens before routing, so the route has to be resolved
+        explicitly - otherwise every 429 lands in an 'unmatched' bucket and the
+        metric cannot say which endpoint is being hammered."""
+        for _ in range(4):
+            client.post("/recommendations/", json={"title": "berserk"})
+        body = client.get("/metrics").text
+        assert 'route="/recommendations/",status="429"' in body
+        assert 'route="unmatched",status="429"' not in body
+
     def test_disabling_the_limiter_lets_everything_through(self, monkeypatch, api_settings):
         from manga_recs.api import main
 
