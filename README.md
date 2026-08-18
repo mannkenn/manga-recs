@@ -4,10 +4,16 @@ An end-to-end content-based recommender that suggests similar manga from
 AniList data — data pipeline, model training, offline evaluation, HTTP API, and
 web frontend, all running on free-tier infrastructure.
 
-<!-- Fill these in after deploying (see DEPLOYMENT.md) -->
-**Live demo:** _pending deploy_ · **API:** _pending deploy_
+<!-- Fill in after deploying: see DEPLOYMENT.md -->
+**Live demo:** _pending deploy_
+
+## Architecture
+
+Training and serving are separated on purpose, and only one of them needs
+credentials.
 
 ```
+  TRAINING — credentialed, scheduled, offline
                     ┌─────────────────────────────────────────┐
    AniList GraphQL  │  ingest → clean → features → train      │  GitHub Actions
         API ───────►│         (quality gates between)         │◄── weekly cron
@@ -17,9 +23,29 @@ web frontend, all running on free-tier infrastructure.
                         S3-compatible object store
                         raw/ cleaned/ features/ models/ metrics/
                                        │
+                                       │  make bundle  (explicit promotion)
                                        ▼
-   Browser ──► Vercel (Next.js) ──► Render (FastAPI) ──► loads model on boot
+  SERVING — no credentials, no network
+                    ┌─────────────────────────────────────────┐
+   Browser ────────►│  one container                          │
+                    │    FastAPI ─ /recommendations/ /health  │
+                    │            ─ /metrics                   │
+                    │            └ static UI (Next.js export) │
+                    │  baked in: cosine_sim.pkl        7.5 MB │
+                    │            manga_metadata.parquet 0.5 MB│
+                    └─────────────────────────────────────────┘
 ```
+
+The serving path needs 7.9 MB of artifacts, so they are committed and copied
+into the image at build time. Nothing is fetched to answer a request: no bucket,
+no keys, no egress, and no failure mode where the demo is down because storage
+is unreachable. One container serves the API and the UI on one origin, which
+also removes CORS and the proxy route the split deployment needed.
+
+The object store has not gone away — it is how the pipeline publishes dated
+partitions — it is just no longer in the request path. Promotion is therefore
+explicit: `make bundle`, commit, redeploy. A bad training run cannot silently
+become the live model.
 
 ## Results
 
