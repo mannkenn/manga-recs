@@ -153,6 +153,12 @@ button {
   margin: 0;
 }
 
+.results-matched {
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.75;
+}
+
 .rec-card {
   background: var(--panel);
   border: 1px solid var(--border);

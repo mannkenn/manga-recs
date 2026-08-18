@@ -6,15 +6,19 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
-      # Set these as secrets in the Render dashboard (sync: false = not stored in repo).
+      # All set as secrets in the Render dashboard (sync: false = never in the repo).
       - key: AWS_ACCESS_KEY_ID
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
         sync: false
       - key: AWS_DEFAULT_REGION
         sync: false
+      # S3-compatible endpoint. Set to https://<account-id>.r2.cloudflarestorage.com
+      # for Cloudflare R2; leave unset to use AWS S3.
+      - key: MANGA_RECS_S3_ENDPOINT_URL
+        sync: false
       - key: MANGA_RECS_S3_BUCKET
         sync: false
-      # Comma-separated list of allowed frontend origins, e.g. https://manga-recs.vercel.app
+      # Comma-separated allowed frontend origins, e.g. https://manga-recs.vercel.app
       - key: MANGA_RECS_CORS_ORIGINS
         sync: false

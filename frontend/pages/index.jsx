@@ -16,6 +16,7 @@ export default function Home() {
   const [title, setTitle] = useState('');
   const [topN, setTopN] = useState(5);
   const [results, setResults] = useState([]);
+  const [matchedTitle, setMatchedTitle] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searched, setSearched] = useState(false);
@@ -25,6 +26,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResults([]);
+    setMatchedTitle(null);
     setSearched(true);
 
     try {
@@ -39,6 +41,7 @@ export default function Home() {
       }
       const data = await res.json();
       setResults(data.recommendations);
+      setMatchedTitle(data.matched_title ?? null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -91,7 +94,12 @@ export default function Home() {
 
       {results.length > 0 && (
         <section className="results">
-          <h2 className="results-heading">Similar titles</h2>
+          <h2 className="results-heading">
+            Similar titles
+            {matchedTitle && (
+              <span className="results-matched"> — matched “{matchedTitle}”</span>
+            )}
+          </h2>
           {results.map((rec) => (
             <article key={rec.id} className="rec-card">
               <div className="rec-card__head">
