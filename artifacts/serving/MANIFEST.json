@@ -1,6 +1,6 @@
 {
   "partition": "2026-08-18",
-  "built_at": "2026-08-18T16:38:26+00:00",
+  "built_at": "2026-08-18T17:21:40+00:00",
   "source_backend": "manga-recs @ http://localhost:9000 (region=us-east-1)",
   "files": {
     "cosine_sim.pkl": {
