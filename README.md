@@ -115,7 +115,7 @@ raise same-author titles surfaced in the top 10 from 218 to 278 across the 353
 titles with a same-author sibling — a 28% lift on the question the feature
 exists to answer, and visible in the Uzumaki example above.
 
-Reproduce with `python scripts/author_ablation.py`.
+Reproduce with `python scripts/author_ablation.py --partition 2026-08-18`.
 
 Serving latency is ~2.5 ms p50 / 2.8 ms p95 locally, since the similarity matrix
 is precomputed and held in memory.

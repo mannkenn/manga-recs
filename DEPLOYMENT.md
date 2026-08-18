@@ -11,8 +11,8 @@ Two things deploy independently, and they are deliberately decoupled:
   │           ── /metrics                        │
   │           └─ static UI (Next.js export)      │
   │                                              │
-  │   baked in: cosine_sim.pkl        7.5 MB     │
-  │             manga_metadata.parquet 0.5 MB    │
+  │   baked in: cosine_sim.pkl         7.1 MB    │
+  │             manga_metadata.json.gz 0.4 MB    │
   └──────────────────────────────────────────────┘
 
   PIPELINE  (credentialed, runs elsewhere)
