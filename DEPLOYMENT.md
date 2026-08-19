@@ -123,7 +123,7 @@ and the non-root user. Reproduce both:
 
 ```bash
 make docker-build
-docker run --rm -p 7860:7860 --read-only --tmpfs /tmp --user 1000:1000 manga-recs:hf
+docker run --rm -p 7860:7860 --read-only --tmpfs /tmp --user 1000:1000 manga-recs
 ```
 
 ```bash
@@ -261,7 +261,7 @@ Pointing at a real backend is a config change, not a code change:
 docker run --rm -p 7860:7860 \
   -e MANGA_RECS_TRACE_EXPORTER=otlp \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317 \
-  manga-recs:hf
+  manga-recs
 ```
 
 Requires the OTLP extra: `pip install -e ".[otlp]"`.
@@ -317,9 +317,16 @@ export REQUESTS_CA_BUNDLE=/tmp/ca.pem
 For the Docker build on such a network:
 
 ```bash
-docker build -t manga-recs:hf \
+docker build -t manga-recs \
   --build-arg NPM_CONFIG_STRICT_SSL=false \
   --build-arg PIP_TRUSTED_HOST="pypi.org files.pythonhosted.org" .
+```
+
+Or through the Makefile, which passes the flags on to `docker build`:
+
+```bash
+make docker-smoke DOCKER_BUILD_ARGS='--build-arg NPM_CONFIG_STRICT_SSL=false \
+  --build-arg PIP_TRUSTED_HOST="pypi.org files.pythonhosted.org"'
 ```
 
 Those arguments default to the secure values and are never needed on Spaces or

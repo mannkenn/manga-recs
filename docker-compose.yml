@@ -35,22 +35,10 @@ services:
       echo 'Bucket manga-recs ready'
       "
 
-  api:
-    build: .
-    container_name: manga-recs-api
-    profiles: ["api"]
-    ports:
-      - "8000:8000"
-    environment:
-      MANGA_RECS_S3_ENDPOINT_URL: http://minio:9000
-      MANGA_RECS_S3_BUCKET: manga-recs
-      MANGA_RECS_S3_FORCE_PATH_STYLE: "true"
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
-      AWS_DEFAULT_REGION: us-east-1
-    depends_on:
-      minio-init:
-        condition: service_completed_successfully
+# There is deliberately no api service here. The serving image bakes its
+# artifacts in and never reads the object store, so running it needs nothing from
+# this file: use `make docker-run`, or `make docker-smoke` to boot it under the
+# read-only filesystem Hugging Face Spaces gives it.
 
 volumes:
   minio-data:
