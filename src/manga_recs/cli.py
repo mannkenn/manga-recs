@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Stages that read and write a dated partition in the object store.
+    stage_parsers: dict[str, argparse.ArgumentParser] = {}
     for name, help_text in (
         ("clean", "Normalize raw data into validated Parquet"),
         ("features", "Build model-ready feature matrices"),
@@ -43,6 +44,23 @@ def build_parser() -> argparse.ArgumentParser:
             "--partition",
             help="Date partition (YYYY-MM-DD). Defaults to today for writes, latest for reads.",
         )
+        stage_parsers[name] = stage
+
+    # Opt-in so that reading the numbers stays separate from acting on them: an
+    # ad-hoc `evaluate` should print and exit 0, while a scheduled run asks to
+    # fail loudly on a regression.
+    evaluate_parser = stage_parsers["evaluate"]
+    evaluate_parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="Exit non-zero unless the content model beats the popularity baseline.",
+    )
+    evaluate_parser.add_argument(
+        "--min-recall",
+        type=float,
+        default=0.0,
+        help="Additional absolute recall@k floor, only enforced together with --gate.",
+    )
 
     ingest_parser = subparsers.add_parser("ingest", help="Fetch raw data from AniList")
     ingest_parser.add_argument(
@@ -135,9 +153,24 @@ def main() -> None:
 
         train(partition=partition)
     elif args.command == "evaluate":
-        from manga_recs.models.evaluate import format_report, run_evaluation
+        from manga_recs.models.evaluate import (
+            PromotionGateError,
+            check_promotion,
+            format_report,
+            run_evaluation,
+        )
 
-        print(format_report(run_evaluation(partition=partition)))
+        metrics = run_evaluation(partition=partition)
+        print(format_report(metrics))
+        if args.gate:
+            try:
+                check_promotion(metrics, min_recall=args.min_recall)
+            except PromotionGateError as exc:
+                # The partition stays published either way; promotion to the
+                # serving bundle is a separate, manual step. Failing here is the
+                # signal not to take it.
+                raise SystemExit(f"\nQuality gate failed: {exc}") from exc
+            print("\nQuality gate passed.")
     elif args.command == "recommend":
         from manga_recs.serving.recommender import get_recommender
 

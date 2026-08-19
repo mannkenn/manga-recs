@@ -226,11 +226,16 @@ The pipeline is a DAG of independently retryable stages, so a failure does not
 force a re-run of the expensive AniList ingestion.
 
 - **Production:** [`.github/workflows/refresh.yml`](.github/workflows/refresh.yml)
-  runs weekly, writes a new partition, and fails the run if the content model
-  does not beat the popularity baseline.
+  runs weekly, writes a new partition, and evaluates it with
+  `manga-recs evaluate --gate`, which fails the run if the content model does not
+  beat the popularity baseline. Publishing a partition and promoting it are
+  separate: a failed gate leaves the new partition in the object store but is the
+  signal not to rebuild the serving bundle from it.
 - **Local:** `make airflow` brings up Airflow against the same code
   ([`airflow/dags/manga_recs_dag.py`](airflow/dags/manga_recs_dag.py)) for
-  developing and debugging the DAG on a real scheduler.
+  developing and debugging the DAG on a real scheduler. It applies the identical
+  gate through the same `check_promotion` helper, so the two schedulers cannot
+  drift on what counts as promotable.
 
 ## Testing
 
@@ -240,8 +245,9 @@ make test-unit   # no infrastructure required
 make lint
 ```
 
-106 tests covering the transforms, quality gates, GraphQL retry behaviour,
-evaluation harness, recommender, HTTP API, and object store.
+252 tests covering the transforms, quality gates, GraphQL retry behaviour,
+evaluation harness and promotion gate, recommender, HTTP API, rate limiter,
+observability, serving bundle, and object store.
 
 The object store tests run against real MinIO rather than a mock, because the
 bugs worth catching there — endpoint resolution, addressing style, partition

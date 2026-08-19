@@ -53,8 +53,17 @@ jobs:
       - name: Train model
         run: manga-recs train --partition "${{ steps.partition.outputs.value }}"
 
+      # --gate fails the run when the content model does not beat the popularity
+      # baseline. The partition is already published at this point; the failure is
+      # the signal not to promote it into the serving bundle, which is manual.
+      #
+      # pipefail is required: the default shell is `bash -e`, so without it `tee`
+      # returns 0 and a regressed model would sail through as a green run.
       - name: Evaluate model
-        run: manga-recs evaluate --partition "${{ steps.partition.outputs.value }}" | tee metrics.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          manga-recs evaluate --gate --partition "${{ steps.partition.outputs.value }}" | tee metrics.txt
 
       - name: Publish metrics to the run summary
         if: always()

@@ -233,6 +233,41 @@ def format_report(metrics: list[Metrics]) -> str:
     return "\n".join(lines)
 
 
+class PromotionGateError(Exception):
+    """Raised when measured metrics do not justify promoting a model."""
+
+
+def check_promotion(metrics: list[Metrics], min_recall: float = 0.0) -> None:
+    """Raise :class:`PromotionGateError` unless the content model earns promotion.
+
+    The primary bar is relative rather than absolute: a content model that cannot
+    beat ranking the whole catalogue by popularity has no reason to exist, and an
+    absolute floor on its own would happily pass a model that had collapsed into
+    recommending the same popular titles to everyone. ``min_recall`` is the
+    optional second bar, for catching a run where both the model and the baseline
+    are bad.
+    """
+    by_strategy = {m.strategy: m for m in metrics}
+    content = by_strategy.get("content")
+    popularity = by_strategy.get("popularity")
+    if content is None or popularity is None:
+        raise PromotionGateError(
+            "Evaluation produced no content and/or popularity metrics, so the gate "
+            "cannot be applied."
+        )
+
+    if content.recall_at_k < min_recall:
+        raise PromotionGateError(
+            f"recall@{content.k}={content.recall_at_k:.4f} is below the configured "
+            f"floor of {min_recall:.4f}."
+        )
+    if content.recall_at_k <= popularity.recall_at_k:
+        raise PromotionGateError(
+            f"content recall@{content.k}={content.recall_at_k:.4f} did not beat the "
+            f"popularity baseline ({popularity.recall_at_k:.4f})."
+        )
+
+
 def run_evaluation(partition: str | None = None) -> list[Metrics]:
     """Load published artifacts, evaluate them, and record the results."""
     import joblib

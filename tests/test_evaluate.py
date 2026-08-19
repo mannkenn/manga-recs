@@ -4,7 +4,9 @@ import pytest
 
 from manga_recs.models.evaluate import (
     Metrics,
+    PromotionGateError,
     build_positive_interactions,
+    check_promotion,
     evaluate_all,
     format_report,
     split_holdout,
@@ -170,3 +172,37 @@ def test_format_report_includes_every_strategy():
     assert "content" in report
     assert "popularity" in report
     assert "recall@10" in report
+
+
+class TestCheckPromotion:
+    """The gate the weekly refresh and the Airflow DAG both apply."""
+
+    @staticmethod
+    def _metrics(content_recall: float, popularity_recall: float = 0.1) -> list[Metrics]:
+        return [
+            Metrics("content", 10, 5, content_recall, 0.2, 0.3, 0.5),
+            Metrics("popularity", 10, 5, popularity_recall, 0.05, 0.08, 0.02),
+        ]
+
+    def test_passes_when_content_beats_popularity(self):
+        check_promotion(self._metrics(0.4))
+
+    def test_rejects_a_model_that_loses_to_popularity(self):
+        with pytest.raises(PromotionGateError, match="did not beat the popularity baseline"):
+            check_promotion(self._metrics(0.05))
+
+    def test_rejects_a_tie(self):
+        """Matching the baseline is not beating it, and buys nothing for the complexity."""
+        with pytest.raises(PromotionGateError, match="did not beat"):
+            check_promotion(self._metrics(0.1, popularity_recall=0.1))
+
+    def test_enforces_the_absolute_floor(self):
+        with pytest.raises(PromotionGateError, match="below the configured floor"):
+            check_promotion(self._metrics(0.2, popularity_recall=0.01), min_recall=0.5)
+
+    def test_floor_defaults_to_disabled(self):
+        check_promotion(self._metrics(0.02, popularity_recall=0.01))
+
+    def test_raises_when_a_strategy_is_missing(self):
+        with pytest.raises(PromotionGateError, match="cannot be applied"):
+            check_promotion([Metrics("content", 10, 5, 0.4, 0.2, 0.3, 0.5)])

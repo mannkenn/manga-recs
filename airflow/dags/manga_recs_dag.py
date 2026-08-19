@@ -69,26 +69,20 @@ def manga_recs_refresh():
     @task
     def evaluate(partition: str) -> dict:
         """Score the new model and refuse to promote a regression."""
-        from manga_recs.models.evaluate import format_report, run_evaluation
+        from manga_recs.models.evaluate import check_promotion, format_report, run_evaluation
 
         metrics = run_evaluation(partition=partition)
-        content = next(m for m in metrics if m.strategy == "content")
-        popularity = next(m for m in metrics if m.strategy == "popularity")
-
         print(format_report(metrics))
 
-        floor = float(Variable.get("manga_recs_min_recall", default_var=0.0))
-        if content.recall_at_k < floor:
-            raise ValueError(
-                f"recall@{content.k}={content.recall_at_k:.4f} is below the "
-                f"configured floor of {floor:.4f}; not promoting this model."
-            )
-        if content.recall_at_k <= popularity.recall_at_k:
-            raise ValueError(
-                f"Content model (recall@{content.k}={content.recall_at_k:.4f}) did not beat "
-                f"the popularity baseline ({popularity.recall_at_k:.4f})."
-            )
+        # Same gate the scheduled GitHub Actions run applies via
+        # `manga-recs evaluate --gate`, so the two schedulers cannot drift apart
+        # on what counts as a promotable model.
+        check_promotion(
+            metrics,
+            min_recall=float(Variable.get("manga_recs_min_recall", default_var=0.0)),
+        )
 
+        content = next(m for m in metrics if m.strategy == "content")
         return {"partition": partition, "recall_at_k": content.recall_at_k}
 
     partition = resolve_partition()
