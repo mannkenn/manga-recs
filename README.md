@@ -4,8 +4,7 @@ An end-to-end content-based recommender that suggests similar manga from
 AniList data — data pipeline, model training, offline evaluation, HTTP API, and
 web frontend, all running on free-tier infrastructure.
 
-<!-- Fill in after deploying: see DEPLOYMENT.md -->
-**Live demo:** _pending deploy_
+**Live demo:** <https://emmanuelkim-manga-recs.hf.space/>
 
 ## Architecture
 

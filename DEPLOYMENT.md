@@ -76,6 +76,12 @@ scripts/deploy_hf.sh <your-hf-username>
 Git will prompt for credentials: username is your HF username, password is the
 **write token** from step 1.
 
+> The Hugging Face account here is `emmanuelkim`, which is **not** the GitHub
+> account (`mannkenn`) — so this deploy is `scripts/deploy_hf.sh emmanuelkim`,
+> publishing to <https://emmanuelkim-manga-recs.hf.space/>. That URL is linked
+> externally, so keep the Space name as `manga-recs`: renaming it changes the
+> hostname and breaks the link.
+
 The script builds the Space commit in a throwaway worktree — it swaps in
 `deploy/huggingface/README.md`, which carries the mandatory YAML frontmatter,
 and drops tests, CI config and local data. Your branch is untouched, and the
@@ -292,6 +298,14 @@ commit the updated `package-lock.json`.
 **Space builds but shows "Application starting" forever**
 The container is not listening on 7860. Check `app_port: 7860` survived in the
 pushed README — `head -10 README.md` inside the Space repo.
+
+**The `.hf.space` URL returns a Hugging Face 404 page**
+Not the application's 404 — check for the `X-Response-Time-ms` header, which
+this service sets on every response and Hugging Face's own error page does not.
+Its absence means the request never reached the container: the Space does not
+exist under that exact owner and name, is still on its first build, or is set to
+**Private**, which 404s for anonymous visitors. Anything linked externally has
+to be Public.
 
 **`/health` reports `degraded` with `artifact_source` absent**
 The bundle is missing from the image. Confirm `artifacts/serving/` is committed
