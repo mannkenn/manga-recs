@@ -34,6 +34,31 @@ jobs:
       - name: Ruff (format)
         run: ruff format --check .
 
+  # `next build` is already exercised by the Docker job below, which is the build
+  # that actually ships. This job exists for the lint that job does not run, and
+  # to fail in seconds with a clear message rather than part-way through an image
+  # build. Node 20 matches the Dockerfile's frontend stage.
+  frontend:
+    name: Frontend lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
   test:
     name: Tests
     runs-on: ubuntu-latest
