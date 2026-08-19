@@ -1,7 +1,7 @@
 import Head from 'next/head';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { fetchRecommendations } from '../lib/api';
+import { fetchHealth, fetchRecommendations } from '../lib/api';
 
 // Cleaning lowercases titles so that fuzzy matching is case-insensitive, which
 // means the display copy has to put the capitals back.
@@ -26,6 +26,10 @@ function stripHtml(value) {
 const EXAMPLES = ['Berserk', 'Attack on Titan', 'Oyasumi Punpun', 'Vinland Saga', 'Chainsaw Man'];
 
 export default function Home() {
+  // Read the catalogue size from the service rather than hardcoding it. The
+  // number changes every time the model is retrained, and stale copy claiming a
+  // count the API disagrees with is worse than no count at all.
+  const [catalogSize, setCatalogSize] = useState(null);
   const [title, setTitle] = useState('');
   const [topN, setTopN] = useState(5);
   const [results, setResults] = useState([]);
@@ -34,6 +38,19 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [searched, setSearched] = useState(false);
   const inFlight = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchHealth()
+      .then((health) => {
+        if (!cancelled && health?.items) setCatalogSize(health.items);
+      })
+      // Purely decorative: the subtitle just omits the count if this fails.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const run = async (queryTitle) => {
     const query = (queryTitle ?? title).trim();
@@ -86,8 +103,9 @@ export default function Home() {
       <header className="header">
         <h1 className="title">Manga Recommendations</h1>
         <p className="subtitle">
-          Content-based recommendations over 963 AniList titles. Similarity is cosine distance
-          across genre, tag, and popularity features.
+          Content-based recommendations over {catalogSize ? `${catalogSize.toLocaleString()} ` : ''}
+          AniList titles. Similarity is cosine distance across genres, tags, authors, and
+          normalised numeric metadata.
         </p>
       </header>
 

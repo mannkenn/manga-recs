@@ -1,181 +1,224 @@
 # Deployment
 
-The system deploys as three independent pieces:
+Two things deploy independently, and they are deliberately decoupled:
 
 ```
-Browser ──> Vercel (Next.js)  ──>  Render (FastAPI)  ──>  Cloudflare R2
-             /api/recommendations     /recommendations/     model + metadata
+  SERVING  (no credentials, no network)
+  ┌──────────────────────────────────────────────┐
+  │  Hugging Face Space — one Docker container   │
+  │                                              │
+  │   FastAPI ── /health  /recommendations/      │
+  │           ── /metrics                        │
+  │           └─ static UI (Next.js export)      │
+  │                                              │
+  │   baked in: cosine_sim.pkl         7.1 MB    │
+  │             manga_metadata.json.gz 0.4 MB    │
+  └──────────────────────────────────────────────┘
 
-GitHub Actions (weekly cron) ──> AniList ──> Cloudflare R2
+  PIPELINE  (credentialed, runs elsewhere)
+  ┌──────────────────────────────────────────────┐
+  │  GitHub Actions, weekly                      │
+  │   AniList ─> raw ─> cleaned ─> features      │
+  │           ─> train ─> evaluate               │
+  │                    ↓                         │
+  │        S3-compatible object store (R2)       │
+  └──────────────────────────────────────────────┘
 ```
 
-The frontend never calls the backend directly from the browser. It proxies
-through its own server-side route (`/api/recommendations`), which keeps the
-backend URL out of client bundles and sidesteps CORS entirely.
+The running demo reads nothing at runtime. Both artifacts it needs come to
+7.9 MB, so they are committed under `artifacts/serving/` and copied into the
+image at build time. That removes every credential from the serving path: no
+bucket, no keys, no egress, and no failure mode where the demo is down because
+storage is unreachable.
 
-Everything below runs on free tiers with no expiry.
+The object store still matters — it is how the pipeline publishes dated
+partitions, and how a refreshed model gets from a scheduled run to a new
+bundle — but it is not in the request path.
+
+Promoting a new model is therefore explicit: `make bundle` pulls the latest
+published partition into `artifacts/serving/`, you commit it, and redeploy. A
+bad training run cannot silently become the live model.
 
 ---
 
-## Why not AWS?
+## Deploy to Hugging Face Spaces
 
-The original build used AWS S3. As of July 2025 a new AWS account has to pick a
-Free plan or a Paid plan, and **the Free plan closes your account after six
-months**, deleting whatever is in it. That is a bad fit for a portfolio project
-you want reachable while job hunting.
+Prerequisites: an account on <https://huggingface.co/join>, and `git` with the
+credential helper able to store a token.
 
-The application talks to an **S3-compatible API** rather than to AWS
-specifically, so the storage provider is a config value:
+### 1. Create a write token
+
+<https://huggingface.co/settings/tokens> → **New token** → type **Write**. Copy it.
+
+### 2. Create the Space
+
+<https://huggingface.co/new-space>
+
+| Field | Value |
+| --- | --- |
+| Owner | your username |
+| Space name | `manga-recs` |
+| License | MIT |
+| SDK | **Docker** → **Blank** |
+| Hardware | CPU basic (free) |
+| Visibility | Public |
+
+Leave everything else alone. `app_port` comes from the README frontmatter that
+the deploy script pushes, so there is nothing to configure in the UI.
+
+### 3. Push
+
+```bash
+make bundle                        # only if artifacts/serving is stale
+scripts/deploy_hf.sh <your-hf-username>
+```
+
+Git will prompt for credentials: username is your HF username, password is the
+**write token** from step 1.
+
+The script builds the Space commit in a throwaway worktree — it swaps in
+`deploy/huggingface/README.md`, which carries the mandatory YAML frontmatter,
+and drops tests, CI config and local data. Your branch is untouched, and the
+project README never grows a `sdk: docker` header.
+
+### 4. Watch it build
+
+```
+https://huggingface.co/spaces/<username>/manga-recs?logs=build
+```
+
+First build takes 3-5 minutes, most of it `npm ci` and the wheel installs. When
+it goes green:
+
+```bash
+curl https://<username>-manga-recs.hf.space/health
+```
+
+```json
+{"status":"ok","model_loaded":true,"items":965,
+ "artifact_source":"bundle","model_partition":"2026-08-18"}
+```
+
+`"artifact_source":"bundle"` is the thing to check. It confirms the container
+answered from baked-in artifacts rather than reaching for a bucket it has no
+credentials for.
+
+### 5. Recommended Space settings
+
+Under **Settings → Variables and secrets**, add one variable (not a secret):
+
+| Name | Value | Why |
+| --- | --- | --- |
+| `MANGA_RECS_TRUST_FORWARDED_FOR` | `true` | Spaces proxies the container, so without this every visitor shares one apparent IP and the rate limiter throttles them as a single client. |
+
+No secrets are needed. If you find yourself adding an access key, something has
+regressed — check `MANGA_RECS_ARTIFACT_SOURCE` is still `bundle`.
+
+---
+
+## Verifying locally before you push
+
+The Space constraints that actually break builds are the read-only filesystem
+and the non-root user. Reproduce both:
+
+```bash
+make docker-build
+docker run --rm -p 7860:7860 --read-only --tmpfs /tmp --user 1000:1000 manga-recs
+```
+
+```bash
+curl -s localhost:7860/health
+curl -s -X POST localhost:7860/recommendations/ \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Berserk","topN":3}'
+```
+
+Or in one step, which also checks the UI, the 404 path and the metrics
+endpoint:
+
+```bash
+make docker-smoke
+```
+
+If the container starts as root locally but not on Spaces, you are missing
+`--user 1000:1000`. If it works read-write and dies read-only, something is
+writing into `/app`; `HOME`, `XDG_CACHE_HOME` and `MPLCONFIGDIR` are already
+pointed at `/tmp` in the Dockerfile, so the culprit is usually new code writing
+a relative path.
+
+---
+
+## The pipeline
+
+Only needed to produce a *new* model. The committed bundle is enough to serve.
+
+### Object storage
+
+Any S3-compatible store. The endpoint is a config value, so the provider is a
+choice rather than a dependency:
 
 | Provider | Endpoint | Free tier | Expires |
 | --- | --- | --- | --- |
 | Cloudflare R2 | `https://<account>.r2.cloudflarestorage.com` | 10 GB, zero egress | Never |
-| AWS S3 | *(unset)* | 5 GB always-free | Never on the Paid plan |
+| AWS S3 | *(unset)* | 5 GB | Free plan closes the account after 6 months |
 | MinIO | `http://localhost:9000` | Local only | n/a |
 
-R2 is the default recommendation here: permanent free tier, no egress charges,
-and no card-on-file countdown. Switching to AWS later is one environment
-variable.
-
----
-
-## 1. Object storage (Cloudflare R2)
-
-1. Create a free account at <https://dash.cloudflare.com/sign-up>.
-2. In the sidebar choose **R2 Object Storage**. Enabling R2 asks for a card for
-   overage protection, but the 10 GB free tier never expires and this project
-   stores well under 100 MB.
-3. **Create bucket** named `manga-recs`. Location `Automatic` is fine.
-4. Go to **R2 → API → Manage API Tokens → Create API Token**.
-   - Permission: **Object Read & Write**
-   - Scope it to the `manga-recs` bucket only.
-   - Create, then copy the **Access Key ID** and **Secret Access Key**. The
-     secret is shown exactly once.
-5. Note your **S3 API endpoint**, shown on the bucket settings page as
-   `https://<account-id>.r2.cloudflarestorage.com`.
-
-Put those into `.env` locally:
+R2 is the default recommendation: permanent free tier and no egress charges.
+AWS is avoided because since July 2025 a new account on the Free plan is closed
+after six months, taking its contents with it — a poor fit for something you
+want reachable while job hunting.
 
 ```bash
 cp .env.example .env
 ```
 
 ```env
-AWS_ACCESS_KEY_ID=<r2-access-key-id>
-AWS_SECRET_ACCESS_KEY=<r2-secret-access-key>
+AWS_ACCESS_KEY_ID=<access-key-id>
+AWS_SECRET_ACCESS_KEY=<secret-access-key>
 AWS_DEFAULT_REGION=auto
 MANGA_RECS_S3_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
 MANGA_RECS_S3_BUCKET=manga-recs
 ```
 
-Confirm the connection before doing anything expensive:
-
 ```bash
-make status
+make status          # confirm connectivity before anything expensive
 ```
 
----
-
-## 2. Populate the bucket
-
-The API serves precomputed artifacts, so the bucket has to be filled once
-before any deploy is useful.
+### Run it
 
 ```bash
 make install-dev
-make run-pipeline    # AniList -> raw -> cleaned -> features   (~32 min)
-make run-train       # similarity matrix -> models/
-make run-evaluate    # recall@k vs baselines -> metrics/
+make run-pipeline    # AniList -> raw -> cleaned -> features
+make run-train       # similarity matrix
+make run-evaluate    # recall@10 / precision@10 / NDCG@10 vs baselines
+make bundle          # pull the new partition into artifacts/serving/
 ```
 
-Verify:
+`make run-pipeline` takes roughly 40 minutes, nearly all of it waiting on
+AniList's rate limit. That is deliberate: the limiter is set to 30 req/min
+because AniList frequently serves a degraded quota, and cranking it earns 429s
+rather than speed.
 
-```bash
-make status
-```
+Review the evaluation output before committing a new bundle. If the metrics
+regressed, the old bundle is still in git and still serving.
 
-You should see a partition under each of `raw`, `cleaned`, `features`,
-`models`, and `metrics`.
-
----
-
-## 3. Backend on Render
-
-The repo ships a [`Dockerfile`](./Dockerfile) and a
-[`render.yaml`](./render.yaml) blueprint.
-
-1. Push the branch to GitHub.
-2. In Render: **New → Blueprint**, point it at the repo. Render reads
-   `render.yaml` and creates a Docker web service named `manga-recs-api`.
-3. Fill in the environment variables (all marked `sync: false`, so none are
-   stored in the repo):
-
-   | Variable | Value |
-   | --- | --- |
-   | `AWS_ACCESS_KEY_ID` | R2 access key id |
-   | `AWS_SECRET_ACCESS_KEY` | R2 secret access key |
-   | `AWS_DEFAULT_REGION` | `auto` |
-   | `MANGA_RECS_S3_ENDPOINT_URL` | `https://<account-id>.r2.cloudflarestorage.com` |
-   | `MANGA_RECS_S3_BUCKET` | `manga-recs` |
-   | `MANGA_RECS_CORS_ORIGINS` | your Vercel URL, added after step 4 |
-
-   For the deployed API a **read-only** R2 token is sufficient and preferable —
-   it never writes. Create a second token with Object Read permission and use
-   that here, keeping the read-write pair for the pipeline.
-
-4. Deploy, then check `https://<service>.onrender.com/health`:
-
-   ```json
-   {"status": "ok", "model_loaded": true, "items": 1400}
-   ```
-
-   `"model_loaded": false` means the service is running but could not read the
-   bucket — check the credentials and endpoint.
-
-> Render's free tier spins services down when idle, so the first request after
-> a quiet period pays a cold start plus an artifact download. The service warms
-> its cache on startup and loads lazily, so it reports `degraded` rather than
-> crashing if storage is briefly unreachable.
-
----
-
-## 4. Frontend on Vercel
-
-1. **Add New → Project**, import the repo.
-2. Set **Root Directory** to `frontend`. This matters — the Next.js app is not
-   at the repo root. Vercel then auto-detects the framework.
-3. Add an environment variable:
-
-   | Variable | Value |
-   | --- | --- |
-   | `BACKEND_URL` | `https://<service>.onrender.com` |
-
-4. Deploy. Then go back to Render and set `MANGA_RECS_CORS_ORIGINS` to your
-   Vercel URL.
-
----
-
-## 5. Scheduled retraining
+### Scheduled refresh
 
 [`.github/workflows/refresh.yml`](./.github/workflows/refresh.yml) re-runs the
-pipeline, retrains, and re-evaluates every Monday at 06:00 UTC, writing a new
-dated partition. Add these under **Settings → Secrets and variables → Actions**:
+pipeline weekly and publishes a new dated partition. Add under **Settings →
+Secrets and variables → Actions**:
 
-- `AWS_ACCESS_KEY_ID` (read-write R2 token)
+- `AWS_ACCESS_KEY_ID` (read-write token)
 - `AWS_SECRET_ACCESS_KEY`
 - `AWS_DEFAULT_REGION` → `auto`
 - `MANGA_RECS_S3_ENDPOINT_URL`
 - `MANGA_RECS_S3_BUCKET`
 
-Trigger a manual run from the Actions tab to confirm it works. Evaluation
-metrics are published to the workflow summary and uploaded as an artifact.
-
-The backend picks up the new partition on its next restart, since readers
-resolve the latest partition at load time and cache for the process lifetime.
+It publishes artifacts; it does not touch the Space. Promotion stays manual.
 
 ---
 
-## Local end-to-end check
+## Local development
 
 ```bash
 make minio                                   # local S3-compatible storage
@@ -183,11 +226,15 @@ make run-pipeline && make run-train          # populate it
 make run-api                                 # http://127.0.0.1:8000
 
 cd frontend
-echo "BACKEND_URL=http://localhost:8000" > .env.local
+echo "NEXT_PUBLIC_API_BASE=http://localhost:8000" > .env.local
 npm install && npm run dev                   # http://localhost:3000
 ```
 
-To exercise the DAG the way a real scheduler would:
+In the deployed image FastAPI serves the built frontend, so the two share an
+origin and there is no CORS. `next dev` runs on a separate port, which is what
+`NEXT_PUBLIC_API_BASE` is for.
+
+To exercise the DAG the way a scheduler would:
 
 ```bash
 make airflow                                 # http://localhost:8080 (airflow/airflow)
@@ -195,24 +242,92 @@ make airflow                                 # http://localhost:8080 (airflow/ai
 
 ---
 
+## Observability
+
+The service emits structured JSON logs, OpenTelemetry spans, and Prometheus
+metrics. All three work with nothing configured — spans go to a no-op exporter
+by default, so no collector is needed and the demo cannot break for want of one.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `MANGA_RECS_LOG_JSON` | `true` | `false` gives human-readable logs locally |
+| `LOG_LEVEL` | `INFO` | |
+| `MANGA_RECS_TRACE_EXPORTER` | *(none)* | `console`, or `otlp` to export |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Collector URL when exporter is `otlp` |
+
+Pointing at a real backend is a config change, not a code change:
+
+```bash
+docker run --rm -p 7860:7860 \
+  -e MANGA_RECS_TRACE_EXPORTER=otlp \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317 \
+  manga-recs
+```
+
+Requires the OTLP extra: `pip install -e ".[otlp]"`.
+
+What to look at when it misbehaves:
+
+| Symptom | Signal |
+| --- | --- |
+| Demo returns 503 | `manga_recs_model_loaded` is 0; `/health` carries the reason in `detail` |
+| Serving a stale model | `manga_recs_model_info{partition=...}` |
+| "It found nothing for my search" | `manga_recs_title_not_found_total` rising, and `manga_recs_title_match_score` shifting toward the low buckets |
+| Slow responses | `manga_recs_request_duration_seconds` vs `manga_recs_recommendation_duration_seconds` — if only the former moved, the time is in HTTP or startup, not the model |
+| Someone hammering it | `manga_recs_rate_limited_total`, labelled by route |
+
+Every log line carries `request_id`, plus `trace_id` and `span_id` when tracing
+is enabled, so a line found by text search joins to its trace. The id is echoed
+in the `X-Request-ID` response header, which means a user reporting a slow
+request can quote something findable.
+
+---
+
 ## Troubleshooting
 
+**Space build fails at `npm ci`**
+The lockfile and `package.json` disagree. Run `npm install` in `frontend/` and
+commit the updated `package-lock.json`.
+
+**Space builds but shows "Application starting" forever**
+The container is not listening on 7860. Check `app_port: 7860` survived in the
+pushed README — `head -10 README.md` inside the Space repo.
+
+**`/health` reports `degraded` with `artifact_source` absent**
+The bundle is missing from the image. Confirm `artifacts/serving/` is committed
+(`git ls-files artifacts/serving`) and that `.dockerignore` still allows it.
+
+**Works locally, dies on Spaces**
+Almost always the read-only filesystem. Reproduce with
+`docker run --read-only --tmpfs /tmp --user 1000:1000`.
+
 **`No partitions found under s3://manga-recs/models/`**
-The bucket is empty. Run `make run-pipeline && make run-train`.
-
-**`no object store credentials found`**
-`.env` is missing or not being read. Confirm with `make status`.
-
-**Health check returns `degraded`**
-The service is up but cannot read artifacts — usually a wrong
-`MANGA_RECS_S3_ENDPOINT_URL`, or a token scoped to the wrong bucket.
+Pipeline-only. The bucket is empty; run `make run-pipeline && make run-train`.
 
 **`SSLCertVerificationError` when running the pipeline**
-Your machine intercepts TLS (common on corporate networks). Point Python at a
-trust store that includes the interception CA:
+Your network intercepts TLS. Point Python at a trust store that includes the
+interception CA:
 
 ```bash
 python -c "import certifi;print(certifi.where())" | xargs cat > /tmp/ca.pem
 security find-certificate -a -p /Library/Keychains/System.keychain >> /tmp/ca.pem
 export REQUESTS_CA_BUNDLE=/tmp/ca.pem
 ```
+
+For the Docker build on such a network:
+
+```bash
+docker build -t manga-recs \
+  --build-arg NPM_CONFIG_STRICT_SSL=false \
+  --build-arg PIP_TRUSTED_HOST="pypi.org files.pythonhosted.org" .
+```
+
+Or through the Makefile, which passes the flags on to `docker build`:
+
+```bash
+make docker-smoke DOCKER_BUILD_ARGS='--build-arg NPM_CONFIG_STRICT_SSL=false \
+  --build-arg PIP_TRUSTED_HOST="pypi.org files.pythonhosted.org"'
+```
+
+Those arguments default to the secure values and are never needed on Spaces or
+in CI.

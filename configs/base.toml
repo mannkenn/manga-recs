@@ -14,6 +14,17 @@ graphql_url = "https://graphql.anilist.co"
 # Tuned against the real title index: genuine queries (including typos and
 # romaji) score >= 69, while junk queries top out around 60.
 fuzzy_match_threshold = 65
+# Abuse protection for the public demo, enforced per client per minute in this
+# process only. Generous enough that a human clicking around never sees it, low
+# enough that a scripted loop does. A single free-tier container is the whole
+# deployment, so there is nothing to share state with.
+rate_limit_per_minute = 60
+rate_limit_enabled = true
+# Off by default because X-Forwarded-For is client-supplied and spoofable, so
+# trusting it without a proxy in front hands out a trivial bypass. Turn it on
+# when the container genuinely sits behind one - Hugging Face Spaces does, and
+# without it every visitor there shares one apparent address.
+trust_forwarded_for = false
 
 [ingestion]
 # Requests per minute. AniList publishes 90/min but frequently serves a
@@ -32,24 +43,34 @@ user_per_page = 50
 user_max_retries = 3
 
 [features]
-# Creators are ingested from the AniList `staff` connection, filtered to primary
-# authoring roles, and one-hot encoded into the similarity matrix.
-#
-# Honest caveat, measured rather than assumed: permuting the author-to-title
-# mapping produces metrics statistically indistinguishable from the real
-# assignment, so at this catalogue size the author columns are not demonstrably
-# contributing creative signal. Kept on because the encoding is correct and the
-# metrics are no worse; run scripts/author_ablation.py to reproduce.
+# Creators come from the AniList `staff` connection, filtered to primary
+# authoring roles, and are one-hot encoded into the similarity matrix.
 include_authors = true
-# Minimum titles an author must appear on to earn a feature column. 2 keeps the
-# matrix at 566 columns instead of 1629 for no measurable loss.
-author_min_titles = 2
+# Minimum credits an author needs to earn a feature column.
+#
+# 1 rather than a higher floor, which is not the obvious choice, so: raising the
+# floor to 2 discards 1,069 of 1,248 authors and measures no better than
+# baseline (recall -0.0017, CI spanning zero). Only the unfiltered arm separates
+# from its shuffled control. The intuition that singleton columns are dead
+# weight is wrong here because they still shape vector norms.
+#
+# There is also no cost to pay. Feature width affects training only -- which
+# takes under a second -- and not the served artifact, since the similarity
+# matrix is items x items at 965 x 965 however many features produced it.
+#
+# Read scripts/author_ablation.py before tuning this; the effect is small
+# enough that it is easy to fit noise.
+author_min_titles = 1
 
 [mlflow]
 experiment_name = "manga_cosine_recommender"
 
 [recommendation]
 default_top_n = 5
+# Display cap only; similarity is still computed over every tag. AniList returns
+# tags sorted by community rank, so this keeps the most relevant ones. Titles
+# carry up to 82 tags, which is unreadable in the UI and dominates the payload.
+max_tags = 8
 
 [serving]
 # Where the API reads its similarity matrix and metadata from.

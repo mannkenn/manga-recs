@@ -1,24 +1,26 @@
+# Kept as a second deployment target. The image is self-contained -- it bakes in
+# the similarity matrix, the title metadata and the built UI -- so unlike the
+# earlier split deployment this needs no credentials, no bucket, and no CORS
+# allowlist. Render injects PORT and the Dockerfile's CMD honours it, so nothing
+# here has to know about 7860.
+#
+# Hugging Face Spaces is the primary target; see DEPLOYMENT.md.
 services:
   - type: web
-    name: manga-recs-api
+    name: manga-recs
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
-      # All set as secrets in the Render dashboard (sync: false = never in the repo).
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: AWS_DEFAULT_REGION
-        sync: false
-      # S3-compatible endpoint. Set to https://<account-id>.r2.cloudflarestorage.com
-      # for Cloudflare R2; leave unset to use AWS S3.
-      - key: MANGA_RECS_S3_ENDPOINT_URL
-        sync: false
-      - key: MANGA_RECS_S3_BUCKET
-        sync: false
-      # Comma-separated allowed frontend origins, e.g. https://manga-recs.vercel.app
-      - key: MANGA_RECS_CORS_ORIGINS
-        sync: false
+      # Serve strictly from the baked-in bundle and never reach for an object
+      # store. Already the Dockerfile default; set explicitly so that a
+      # misconfiguration fails loudly here rather than silently falling back to
+      # a network call this service has no credentials for.
+      - key: MANGA_RECS_ARTIFACT_SOURCE
+        value: bundle
+      # Render terminates TLS in front of the container, so without this every
+      # visitor shares one apparent address and the rate limiter treats them as
+      # a single client.
+      - key: MANGA_RECS_TRUST_FORWARDED_FOR
+        value: "true"

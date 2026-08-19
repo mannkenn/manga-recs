@@ -42,6 +42,9 @@ class StorageSettings:
 class ApiSettings:
     graphql_url: str
     fuzzy_match_threshold: int
+    rate_limit_per_minute: int
+    rate_limit_enabled: bool
+    trust_forwarded_for: bool
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,7 @@ class MlflowSettings:
 @dataclass(frozen=True)
 class RecommendationSettings:
     default_top_n: int
+    max_tags: int
 
 
 @dataclass(frozen=True)
@@ -254,6 +258,16 @@ def get_settings() -> Settings:
                 "MANGA_RECS_GRAPHQL_URL", api.get("graphql_url", "https://graphql.anilist.co")
             ),
             fuzzy_match_threshold=int(api.get("fuzzy_match_threshold", 70)),
+            rate_limit_per_minute=int(
+                os.getenv("MANGA_RECS_RATE_LIMIT_PER_MINUTE")
+                or api.get("rate_limit_per_minute", 60)
+            ),
+            rate_limit_enabled=_env_bool(
+                "MANGA_RECS_RATE_LIMIT_ENABLED", bool(api.get("rate_limit_enabled", True))
+            ),
+            trust_forwarded_for=_env_bool(
+                "MANGA_RECS_TRUST_FORWARDED_FOR", bool(api.get("trust_forwarded_for", False))
+            ),
         ),
         ingestion=IngestionSettings(
             rate_limit=int(ingestion.get("rate_limit", 10)),
@@ -285,6 +299,7 @@ def get_settings() -> Settings:
         ),
         recommendation=RecommendationSettings(
             default_top_n=int(recommendation.get("default_top_n", 5)),
+            max_tags=int(recommendation.get("max_tags", 8)),
         ),
         evaluation=EvaluationSettings(
             min_user_interactions=int(evaluation.get("min_user_interactions", 5)),

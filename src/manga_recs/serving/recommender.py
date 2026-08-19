@@ -101,7 +101,7 @@ class Recommender:
         with span("recommender.load", **{"manga_recs.artifact_source": source or "auto"}):
             resolved = artifacts.resolve(source=source, partition=partition)
             sim_matrix = joblib.load(resolved.model_path)
-            metadata = pd.read_parquet(resolved.metadata_path)
+            metadata = artifacts.read_bundle_metadata(resolved.metadata_path)
         logger.info(
             "Loaded recommender from %s: %d items in similarity matrix, %d metadata rows",
             resolved.source,
@@ -174,6 +174,14 @@ class Recommender:
         for column in LIST_COLUMNS:
             if column in recs.columns:
                 recs[column] = recs[column].apply(_as_list)
+
+        # Trim tags for display only; the model still scores against all of them.
+        # AniList returns tags pre-sorted by community rank, so the head is the
+        # most relevant. Uncapped, One Piece alone carries 82 - which is 82 pills
+        # in the UI and most of a 6 KB response for five results.
+        if "tags" in recs.columns:
+            recs["tags"] = recs["tags"].apply(lambda tags: tags[: settings.recommendation.max_tags])
+
         recs = recs.sort_values(by="similarity", ascending=False)
 
         return match, recs.reset_index().to_dict(orient="records")

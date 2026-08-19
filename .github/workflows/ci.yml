@@ -34,6 +34,31 @@ jobs:
       - name: Ruff (format)
         run: ruff format --check .
 
+  # `next build` is already exercised by the Docker job below, which is the build
+  # that actually ships. This job exists for the lint that job does not run, and
+  # to fail in seconds with a clear message rather than part-way through an image
+  # build. Node 20 matches the Dockerfile's frontend stage.
+  frontend:
+    name: Frontend lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -78,26 +103,62 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build API image
-        run: docker build -t manga-recs-api:ci .
+      - name: Build the demo image
+        run: docker build -t manga-recs:ci .
 
-      # A built image that cannot boot is not a passing build.
-      - name: Verify the container serves /health
+      # Booted the way Hugging Face Spaces boots it: read-only root filesystem
+      # with only /tmp writable, non-root UID 1000, port 7860. Locally the image
+      # works read-write regardless, so without these flags CI would pass right
+      # up until the Space died on the first write to /app.
+      - name: Boot under the Spaces constraints
         run: |
-          docker run -d --name api -p 8000:8000 \
-            -e MANGA_RECS_S3_BUCKET=unreachable-on-purpose \
-            manga-recs-api:ci
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/health > /tmp/health.json; then
-              echo "Health response: $(cat /tmp/health.json)"
-              exit 0
-            fi
+          docker run -d --name demo -p 7860:7860 \
+            --read-only --tmpfs /tmp --user 1000:1000 \
+            manga-recs:ci
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:7860/health > /tmp/health.json && break
             sleep 2
           done
-          echo "API never became reachable"
-          docker logs api
-          exit 1
+          if [ ! -s /tmp/health.json ]; then
+            echo "Service never became reachable"
+            exit 1
+          fi
+          cat /tmp/health.json
+
+      # No credentials exist in this job, so answering at all proves the
+      # artifacts are baked in rather than fetched.
+      - name: Assert it serves from the baked-in bundle
+        run: |
+          python -c "
+          import json, sys
+          health = json.load(open('/tmp/health.json'))
+          assert health['status'] == 'ok', health
+          assert health['model_loaded'] is True, health
+          assert health['artifact_source'] == 'bundle', health
+          assert health['items'] > 0, health
+          print('Serving', health['items'], 'items from', health['artifact_source'])
+          "
+
+      - name: Assert it returns real recommendations
+        run: |
+          curl -sf -X POST http://localhost:7860/recommendations/ \
+            -H 'Content-Type: application/json' \
+            -d '{"title":"Berserk","topN":3}' > /tmp/recs.json
+          python -c "
+          import json
+          body = json.load(open('/tmp/recs.json'))
+          recs = body['recommendations']
+          assert len(recs) == 3, body
+          assert all(0.0 < r['similarity'] <= 1.0 for r in recs), recs
+          assert all(r['title'] != body['matched_title'] for r in recs), recs
+          print(body['matched_title'], '->', [r['title'] for r in recs])
+          "
+
+      - name: Assert the UI is served from the same origin
+        run: |
+          curl -sf http://localhost:7860/ | grep -q '<title' || {
+            echo "Root did not return the built frontend"; exit 1; }
 
       - name: Container logs
         if: failure()
-        run: docker logs api || true
+        run: docker logs demo || true

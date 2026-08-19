@@ -4,7 +4,9 @@ import pytest
 
 from manga_recs.models.evaluate import (
     Metrics,
+    PromotionGateError,
     build_positive_interactions,
+    check_promotion,
     evaluate_all,
     format_report,
     split_holdout,
@@ -23,12 +25,20 @@ class TestBuildPositiveInteractions:
         )
         assert set(build_positive_interactions(df)["mediaId"]) == {10, 11}
 
-    def test_keeps_highly_rated_regardless_of_status(self):
-        df = pd.DataFrame({"userId": [1], "mediaId": [10], "status": ["DROPPED"], "score": [9]})
-        assert len(build_positive_interactions(df)) == 1
+    def test_a_dropped_title_is_not_positive_even_when_highly_rated(self):
+        """Deliberate change of definition.
+
+        The old rule OR'd status against `score >= 7.0` on what it assumed was a
+        0-10 scale. AniList scores are 0-100, so that clause admitted anything
+        rated at all, including 104 titles users had explicitly dropped.
+        Abandoning a title is a stronger statement than the score beside it, so
+        status now dominates.
+        """
+        df = pd.DataFrame({"userId": [1], "mediaId": [10], "status": ["DROPPED"], "score": [90]})
+        assert len(build_positive_interactions(df)) == 0
 
     def test_drops_low_rated_non_engaged(self):
-        df = pd.DataFrame({"userId": [1], "mediaId": [10], "status": ["DROPPED"], "score": [2]})
+        df = pd.DataFrame({"userId": [1], "mediaId": [10], "status": ["DROPPED"], "score": [20]})
         assert len(build_positive_interactions(df)) == 0
 
     def test_deduplicates(self):
@@ -162,3 +172,37 @@ def test_format_report_includes_every_strategy():
     assert "content" in report
     assert "popularity" in report
     assert "recall@10" in report
+
+
+class TestCheckPromotion:
+    """The gate the weekly refresh and the Airflow DAG both apply."""
+
+    @staticmethod
+    def _metrics(content_recall: float, popularity_recall: float = 0.1) -> list[Metrics]:
+        return [
+            Metrics("content", 10, 5, content_recall, 0.2, 0.3, 0.5),
+            Metrics("popularity", 10, 5, popularity_recall, 0.05, 0.08, 0.02),
+        ]
+
+    def test_passes_when_content_beats_popularity(self):
+        check_promotion(self._metrics(0.4))
+
+    def test_rejects_a_model_that_loses_to_popularity(self):
+        with pytest.raises(PromotionGateError, match="did not beat the popularity baseline"):
+            check_promotion(self._metrics(0.05))
+
+    def test_rejects_a_tie(self):
+        """Matching the baseline is not beating it, and buys nothing for the complexity."""
+        with pytest.raises(PromotionGateError, match="did not beat"):
+            check_promotion(self._metrics(0.1, popularity_recall=0.1))
+
+    def test_enforces_the_absolute_floor(self):
+        with pytest.raises(PromotionGateError, match="below the configured floor"):
+            check_promotion(self._metrics(0.2, popularity_recall=0.01), min_recall=0.5)
+
+    def test_floor_defaults_to_disabled(self):
+        check_promotion(self._metrics(0.02, popularity_recall=0.01))
+
+    def test_raises_when_a_strategy_is_missing(self):
+        with pytest.raises(PromotionGateError, match="cannot be applied"):
+            check_promotion([Metrics("content", 10, 5, 0.4, 0.2, 0.3, 0.5)])

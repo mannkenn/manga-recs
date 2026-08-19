@@ -104,8 +104,17 @@ frontend-build: ## Build the static frontend into frontend/out
 IMAGE ?= manga-recs
 PORT ?= 7860
 
+# Extra flags for `docker build`. On a network that intercepts TLS the base images
+# do not trust the interception CA, so npm and pip cannot reach their registries:
+#
+#   make docker-build DOCKER_BUILD_ARGS='--build-arg NPM_CONFIG_STRICT_SSL=false \
+#     --build-arg PIP_TRUSTED_HOST="pypi.org files.pythonhosted.org"'
+#
+# Both default to the secure values and are never needed on Spaces or in CI.
+DOCKER_BUILD_ARGS ?=
+
 docker-build: ## Build the single-container demo image (API + UI + artifacts)
-	docker build -t $(IMAGE) .
+	docker build $(DOCKER_BUILD_ARGS) -t $(IMAGE) .
 
 docker-run: ## Run the demo image on $(PORT)
 	docker run --rm -p $(PORT):7860 $(IMAGE)
@@ -113,5 +122,5 @@ docker-run: ## Run the demo image on $(PORT)
 docker-run-readonly: ## Run exactly as Hugging Face Spaces does: read-only FS, /tmp only
 	docker run --rm -p $(PORT):7860 --read-only --tmpfs /tmp $(IMAGE)
 
-docker-smoke: ## Build, boot read-only, and assert /health and /recommendations/ work
+docker-smoke: docker-build ## Build, boot read-only, and assert /health and /recommendations/ work
 	./scripts/smoke_test.sh $(IMAGE) $(PORT)

@@ -3,7 +3,10 @@ query Query($userId: Int, $type: MediaType, $page: Int, $perPage: Int) {
     mediaList(userId: $userId, type: $type) {
       userId
       status
-      score
+      # AniList returns `score` in whichever format each user picked, so an
+      # unqualified request mixes 0-3, 0-5, 0-10 and 0-100 scales in one column
+      # and makes any threshold meaningless. POINT_100 normalises server-side.
+      score(format: POINT_100)
       progress
       mediaId
       createdAt

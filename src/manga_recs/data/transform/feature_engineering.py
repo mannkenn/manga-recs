@@ -1,3 +1,4 @@
+import logging
 from collections import Counter
 from pathlib import Path
 
@@ -5,6 +6,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
+
+logger = logging.getLogger(__name__)
 
 
 def parse_release_year(start_date):
@@ -129,23 +132,99 @@ def create_manga_features(
     return df_encoded
 
 
+# How strongly each list status implies the user actually valued the title.
+# REPEATING is a re-read, which is at least as strong a signal as finishing once.
+STATUS_WEIGHTS = {
+    "COMPLETED": 1.0,
+    "REPEATING": 1.0,
+    "CURRENT": 0.8,
+    "PAUSED": 0.5,
+    "PLANNING": 0.4,
+    "DROPPED": 0.1,
+}
+
+# AniList uses 0 to mean "not rated", not "rated zero".
+UNRATED = 0.0
+
+
 def create_user_features(data):
-    # Accept either a path-like object or a DataFrame
-    if isinstance(data, (str, Path)):
-        df = pd.read_parquet(data)
-    elif isinstance(data, pd.DataFrame):
+    """Reduce raw read lists to a graded (user, item, strength) interaction table.
+
+    ``interaction_strength`` is ``status_weight * score``, on [0, 1]. Three
+    details it has to get right, each of which was previously wrong and each of
+    which silently destroys the signal rather than raising:
+
+    - A score of 0 on AniList means unrated, not "rated zero". Multiplying by it
+      zeroed 61% of all rows, including 2,624 titles users had *completed*, and
+      made an unrated favourite indistinguishable from an untouched title.
+      Unrated scores are imputed with the median rating instead, which places
+      them at the population average rather than the floor.
+    - ``score`` is returned in whichever format each user chose - this catalogue
+      spans 0-3, 0-5, 0-10 and 0-100 across 272 users - so it is not comparable
+      across users until normalised. The query now requests POINT_100; this
+      rescales defensively so older partitions do not silently skew.
+    - A status missing from the weight table produced NaN, quietly dropping the
+      row downstream. REPEATING hit this. Unknown statuses now warn.
+    """
+    if isinstance(data, pd.DataFrame):
         df = data.copy()
     else:
         df = pd.read_parquet(data)
 
-    df = df.drop(
-        columns=["createdAt", "progress"]
-    )  # Drop createdAt since it's not useful for modeling, and progress since it has many nulls
-    # Map status to numerical representation
-    status_map = {"COMPLETED": 1.0, "CURRENT": 0.8, "PAUSED": 0.5, "PLANNING": 0.4, "DROPPED": 0.1}
+    # createdAt is not predictive and progress is mostly null.
+    df = df.drop(columns=[c for c in ("createdAt", "progress") if c in df.columns])
 
-    df["status"] = df["status"].map(status_map)
+    status = df["status"].astype("string").str.upper()
+    unknown = set(status.dropna().unique()) - STATUS_WEIGHTS.keys()
+    if unknown:
+        logger.warning(
+            "Unweighted AniList statuses treated as neutral: %s", ", ".join(sorted(unknown))
+        )
 
-    df["interaction_strength"] = df["status"] * (df["score"] / 10)
+    status_weight = status.map(STATUS_WEIGHTS).astype(float)
+    # An unrecognised status should not delete the interaction.
+    status_weight = status_weight.fillna(min(STATUS_WEIGHTS.values()))
+
+    score = _normalize_scores(df["score"])
+
+    df["status"] = status_weight
+    df["score"] = score
+    df["interaction_strength"] = (status_weight * score).clip(0.0, 1.0)
 
     return df
+
+
+def _normalize_scores(raw: pd.Series) -> pd.Series:
+    """Put scores on [0, 1], imputing unrated entries with the median rating.
+
+    The scale is inferred from the observed maximum rather than assumed, so a
+    partition ingested before the query pinned POINT_100 still normalises
+    correctly instead of collapsing every 0-10 rating to near zero.
+    """
+    score = pd.to_numeric(raw, errors="coerce")
+    rated = score[score.notna() & (score > UNRATED)]
+
+    if rated.empty:
+        # No ratings anywhere, so the rating carries no information and the
+        # status weight is the entire signal. Returning zeros here instead would
+        # wipe out every interaction in the partition.
+        return pd.Series(1.0, index=raw.index)
+
+    upper = float(rated.max())
+    scale = next((bound for bound in (3.0, 5.0, 10.0, 100.0) if upper <= bound), 100.0)
+    if scale != 100.0:
+        logger.warning(
+            "Scores top out at %g, so they are not on AniList's POINT_100 scale; "
+            "normalising by %g. Re-ingest to get server-side normalisation.",
+            upper,
+            scale,
+        )
+
+    normalized = (score / scale).where(score > UNRATED)
+    median = float(normalized.median())
+    logger.info(
+        "Imputed %d unrated scores with the median rating (%.2f)",
+        int(normalized.isna().sum()),
+        median,
+    )
+    return normalized.fillna(median)

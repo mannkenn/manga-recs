@@ -3,6 +3,12 @@
 // backend, set NEXT_PUBLIC_API_BASE=http://localhost:8000.
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 
+export async function fetchHealth() {
+  const response = await fetch(`${API_BASE}/health`);
+  if (!response.ok) throw new Error(`Health check failed with status ${response.status}`);
+  return response.json();
+}
+
 export async function fetchRecommendations({ title, topN, signal }) {
   const response = await fetch(`${API_BASE}/recommendations/`, {
     method: 'POST',

@@ -1,9 +1,25 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RecommendationRequest(BaseModel):
+    # The browser client sends camelCase. Without the alias, Pydantic found no
+    # `top_n`, silently fell back to the default, and every request got five
+    # results however many were asked for - the UI's count control did nothing.
+    #
+    # populate_by_name keeps snake_case working for curl and the Python client.
+    # extra="forbid" is the other half of the fix: a field the server does not
+    # recognise now fails with a 422 instead of being quietly dropped, which is
+    # how this went unnoticed in the first place.
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
     title: str = Field(min_length=1, max_length=200, description="Manga title to search for")
-    top_n: int = Field(default=5, ge=1, le=50, description="How many recommendations to return")
+    top_n: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        alias="topN",
+        description="How many recommendations to return",
+    )
 
 
 class Recommendation(BaseModel):
